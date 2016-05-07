@@ -1,0 +1,153 @@
+### Adding a production-ready database
+
+In this section we'll add a better database to our application. Typically
+you would use MySQL or Postgres or a NoSQL database like
+MongoDB. All of the approach are pretty similar when using containers. You just
+need to figure out the correct environmental variables that allows you to connect
+the database container with the application container.
+In this case we'll go with Postgres.
+
+We are going to be using the [official Postgres image](https://hub.docker.com/_/postgres/)
+from DockerHub. The general environment variables that this image uses for running are
+`POSTGRES_PASSWORD`, `POSTGRES_USER`, and `POSTGRES_DB`.
+
+First, let's add a Postgres section in our docker-compose.yml file:
+
+
+    postgres:
+      image: postgres:9.4
+      container_name: myapp-db
+      environment:
+        - POSTGRES_PASSWORD=secretpassword
+
+If you want to persist your data in your development environment, you'll need
+to mount a data-only container for this database. You can achieve this by adding
+another section for that container:
+
+
+    postgres-data:
+      image: postgres:9.4
+      container_name: myapp-data
+      environment:
+        - POSTGRES_PASSWORD=secretpassword
+      volumes:
+        - /var/lib/postgresql/data
+      command: /bin/true
+
+And then mount this path on the database container:
+
+    postgres:
+      image: postgres:9.4
+      container_name: myapp-db
+      environment:
+        - POSTGRES_PASSWORD=secretpassword
+      volumes_from:
+        - dbdata
+
+
+Now we can use the new networking feature in order to connect
+our database container with our application container. For that we have to
+use the version 2 of docker-compose, so at the beginning of the docker-compose.yml
+file add:
+
+    version: '2'
+
+And now let's move the app and the db to a services section with the same
+network.
+
+    version: '2'
+    services:
+      webapp:
+        build: .
+        container_name: myapp
+        working_dir: /home/app/webapp
+        ports: 
+          - "80:80"
+        environment:
+          - PASSENGER_APP_ENV=development
+        volumes:
+          - .:/home/app/webapp
+        networks: 
+          - back-end
+      postgres:
+        image: postgres:9.4
+        container_name: myapp-db
+        environment:
+          - POSTGRES_USER=myapp
+          - POSTGRES_DB=myapp_development
+          - POSTGRES_PASSWORD=secretpassword
+        volumes_from:
+          - postgres-data
+        networks:
+          - back-end
+      postgres-data:
+        image: postgres:9.4
+        container_name: myapp-data
+        environment:
+          - POSTGRES_PASSWORD=secretpassword
+        volumes:
+          - /var/lib/postgresql/data
+        command: /bin/true
+    networks:
+      back-end:
+        driver: bridge
+
+Now, we can connect to the database from our web application by using
+the service alias `postgres` instead old linking via environmental variables.
+
+Now that we're ready with Docker Compose, let's add the Postgres gem
+to our application. Remember that you can modify the code locally
+since we are mounting a volume from the local project to the project inside of the
+container.
+
+    gem 'pg', '~> 0.18'
+
+And now from inside the container run bundle install:
+
+    docker exec -it myapp bash
+    # bundle install
+
+And then add the following to your config/database.yml file:
+
+
+    default: &default
+      adapter: postgresql
+      encoding: unicode
+      pool: 5
+
+    development:
+      <<: *default
+      database: myapp_development
+      username: myapp
+      password: secretpassword
+      host: postgres
+      port: 5432
+
+    test:
+      <<: *default
+      database: myapp_test
+
+    production:
+      <<: *default
+      database: myapp_production
+      username: myapp
+      password: secretpassword
+
+Now let's rebuild our application:
+
+    docker-compose stop
+    docker-compose build
+
+And run up:
+
+    docker-compose up
+
+This will pull the postgres images, run the container and create
+the user and database we specified before.
+Now we just need to run the migrations:
+
+    docker exec -it myapp bash
+    # rake db:migrate
+
+And that's it!, now you can visit your application connected to the postgres
+database and test that that everything works as expected.
