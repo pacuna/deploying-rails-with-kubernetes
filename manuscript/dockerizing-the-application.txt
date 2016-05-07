@@ -1,0 +1,156 @@
+### Dockerizing the Application
+
+Luckily for us, to dockerize a Rails App it's pretty straightforward if you use 
+the awesome Phusion Passenger Docker image. This image will provide us with
+a production-ready server for running our application and some other features
+we will need.
+
+In this book I'll show the basics of how to use the image, and if you want
+to learn more you can go to the official [GitHub Repo](https://github.com/phusion/passenger-docker).
+They have a very nice documentation for this project.
+
+First, we are going to need some extra files. Let's create these files in the 
+root of our project:
+
+    $ touch Dockerfile docker-compose.yml rails-env.conf webapp.conf
+
+You should be familiarize with what the `Dockerfile` and `docker-compose.yml` files do.
+
+In the `rails-env.conf` file we will declare which environmental variables we want
+Nginx to preserve. That's because by default, Nginx will clear all of them.
+This file will be added to the Nginx configuration during the build of our container.
+
+The `webapp.conf` will contain the virtual host for our application. This file will
+also be added to the Nginx configuration during the build process.
+
+#### Dockerfile
+
+Add the following template to the Dockerfile:
+
+
+    FROM phusion/passenger-ruby22
+
+    # Set correct environment variables.
+    ENV HOME /root
+
+    # Use baseimage-docker's init process.
+    CMD ["/sbin/my_init"]
+
+    # additional packages 
+    RUN apt-get update
+
+    # Active nginx
+    RUN rm -f /etc/service/nginx/down
+
+    # Install bundle of gems
+    WORKDIR /tmp
+    ADD Gemfile /tmp/
+    ADD Gemfile.lock /tmp/
+    RUN bundle install
+
+    # Copy the nginx template for configuration and preserve environment variables
+    RUN rm /etc/nginx/sites-enabled/default
+
+    # Add the nginx site and config
+    ADD webapp.conf /etc/nginx/sites-enabled/webapp.conf
+
+    # Add the rails-env configuration file
+    ADD rails-env.conf /etc/nginx/main.d/rails-env.conf
+
+    RUN mkdir /home/app/webapp
+    COPY . /home/app/webapp
+    RUN usermod -u 1000 app
+    RUN chown -R app:app /home/app/webapp
+    WORKDIR /home/app/webapp
+
+    # Clean up APT when done.
+    RUN apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+    EXPOSE 80
+
+I've added comments to every line so you can understand better how this
+Dockerfile works. You can see on this lines:
+
+
+    # Add the nginx site and config
+    ADD webapp.conf /etc/nginx/sites-enabled/webapp.conf
+
+    # Add the rails-env configuration file
+    ADD rails-env.conf /etc/nginx/main.d/rails-env.conf
+
+we are adding the virtual host and the environmental variables declaration
+to the nginx configuration.
+The rest of the file is pretty self explanatory. We are using a lot
+of code presented in the official documentation, so nothing too hacky
+happening here. One thing to nice although is that you want to set the correct
+permissions for your application. The passenger user has the uid 1000, so
+all of the `chmod` and `chown` commands you see in the Dockerfile are in charge
+of this. We are also running `bundle install` before copying the entire application
+into the container in order to have an extra cache layer for the gems. This
+way, the `bundle install` command will only be run when you actually make changes
+to the Gemfile.
+
+#### webapp.conf
+
+The virtual host configuration can be as simple as:
+
+    server {
+      listen 80;
+      server_name _;
+      root /home/app/webapp/public;
+      passenger_enabled on;
+      passenger_user app;
+      passenger_ruby /usr/bin/ruby2.2;
+    }
+
+We just need to enable passenger for managing our Ruby application
+from Nginx.
+
+#### rails-env.conf
+
+Right now we are not using any extra environmental variables for we'll be
+editing this file later when we add another database and a search engine
+to our project. For, now you can leave this file empty.
+
+
+#### docker-compose.yml
+
+We just have our application, so let's add a block for building it
+from our source:
+
+    webapp:
+      build: .
+      container_name: myapp
+      working_dir: /home/app/webapp
+      ports:
+        - "80:80"
+      environment:
+        - PASSENGER_APP_ENV=development
+      volumes:
+        - .:/home/app/webapp
+
+The only environmental variable we need for now is the PASSENGER_APP_ENV variable.
+This variable is preserver by default and it will indicate the RAILS_ENV in which
+the container will be running. As we are in development mode, we have to declare
+development for its value.
+We are also adding a volume in case you want to work locally and you don't want to
+rebuild your application every time you make changes to your code. Keep in mind
+that depending on how you're running Docker (natively, with Vagrant, with Docker Machine, etc)
+you may have to set the correct permissions on the shared folder so you don't lose
+the permissions for the passenger user.
+
+Now, we can build our application with docker-compose. My Docker version is `1.11.1, build 5604cbe`
+and my docker-compose version is `1.7.0, build 0d7bf73`. Let's build the app:
+
+    docker-compose build
+
+This can take several minutes the first time since the command will pull the necessary 
+images from DockerHub, update the Linux OS of the container and install the gems.
+Once it finished, you can run the build again and see that is a lot more faster.
+
+Now we can run the application by running:
+
+    docker-compose up
+
+Now depending of what you're using for running Docker you cant visit your VM 
+IP address or your Dockerhost and should be able to see your application running 
+on the port 80.

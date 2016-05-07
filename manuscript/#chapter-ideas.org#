@@ -1,0 +1,46 @@
+* Part I: Development[0%]
+
+** TODO Setting up the development environment[0/6]
+
+*** TODO Creating a new Rails app
+    CLOCK: [2016-05-07 Sat 10:30]--[2016-05-07 Sat 10:41] =>  0:11
+
+*** TODO Dockerizing the app
+    CLOCK: [2016-05-07 Sat 10:41]--[2016-05-07 Sat 11:36] =>  0:55
+
+*** TODO Adding a resource
+
+*** TODO Adding a production-ready Database
+
+*** TODO Adding a Search Engine
+
+*** TODO Pushing our project to DockerHub
+    
+* Part II: Production[0%]
+
+** TODO Setting up the Production Environment
+
+** TODO Creating an AWS account
+
+** TODO Kubernetes[0/4]
+
+*** TODO Basic concepts
+
+*** TODO Installing kb8 and creating the cluster
+
+*** TODO Creating pods and services for the DB and the SE
+
+*** TODO Creating an RC and a Service for our Application
+
+* Part III: CI[0%]
+
+** TODO Installing Jenkins on AWS
+
+** TODO Installing some plugins
+
+** TODO Configuring our project for deploy
+
+** TODO Running our test suite
+
+** TODO Adding an staging environment
+

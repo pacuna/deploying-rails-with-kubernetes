@@ -1,0 +1,13 @@
+### Creating a new Rails App
+
+I have the latest Rails version (Rails 5.0.0.rc1) and Ruby 2.3.0dev version.
+Let's create a new Rails application:
+
+    rails new myapp
+ 
+ We are not using any options by now. We'll be adding more features and dependencies progressively.
+
+ If you run `rails s` you should be able to see the application running locally on `http://localhost:3000`.
+
+
+
