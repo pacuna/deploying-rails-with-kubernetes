@@ -1,0 +1,27 @@
+### Pushing the app to DockerHub
+
+Now that our application is ready for production, we can push the image to
+DockerHub so we can pull it from whatever method we're using for deployment. In
+our case Kubernetes. 
+This process is simple enough and the only thing you need is a DockerHub account
+and to log into Docker using the `docker login` command in your local machine:
+
+    docker login
+
+That's going to ask for your Docker data and then you would be able to push
+images to your personal account. 
+If you don't have an account, go to the [official page](https://hub.docker.com/)
+and create one.
+
+After creating your account, add a new public DockerHub repository and name it `myapp`.
+
+Now we can create our web application image tagged with a version number and push it to DockerHub:
+
+    docker build -t username/myapp:1 .
+
+And then:
+
+    docker push username/myapp:1
+
+If you have any errors during this last command recheck that the `docker login`
+command works fine.
