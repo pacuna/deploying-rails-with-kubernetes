@@ -113,5 +113,3 @@ provided by the gem:
     [IMPORT] Done
 
 And that's it! We have a production-ready search engine for our application.
-
-    
