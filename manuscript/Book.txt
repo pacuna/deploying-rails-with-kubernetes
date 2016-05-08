@@ -5,3 +5,6 @@ dockerizing-the-application.txt
 adding-a-resource.txt
 adding-production-ready-db.txt
 adding-a-search-engine.txt
+production.txt
+creating-an-aws-account.txt
+kubernetes.txt

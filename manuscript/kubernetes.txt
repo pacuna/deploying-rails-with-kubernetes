@@ -1,0 +1,42 @@
+## Kubernetes
+
+### Basic Concepts
+
+### Installation and creating the cluster
+
+For installing Kubernetes and creating the cluster, we'll be following
+the instructions from the [official documentation](http://kubernetes.io/docs/getting-started-guides/aws/).
+By now you should have the AWS CLI installed and your AWS account properly
+configured.
+Let's add some environmental variables to our rc profile (.zshrc or .bashrc depending
+on what shell you're using):
+
+    export KUBERNETES_PROVIDER=aws
+    export KUBE_AWS_ZONE=us-west-2a
+    export NUM_NODES=4
+    export MASTER_SIZE=t2.small
+    export NODE_SIZE=t2.small
+    export AWS_S3_REGION=us-west-2a
+    export INSTANCE_PREFIX=k8s
+
+Here we are setting the cluster configuration, which for now will have
+4 machines of site t2.small in the us-west-2a region.
+Now run a `source` command against the file so the variables are exported 
+for the current sessions.
+
+    $ source FILE
+
+We can run one command that will install Kubernetes and will create the cluster for us.
+
+    cd ~
+    export KUBERNETES_PROVIDER=aws; curl -sS https://get.k8s.io | bash
+
+### Inspecting the cluster configuration and endpoints
+
+### Creating pods and services for the DB and SE
+
+#### Pods
+
+#### Services
+
+#### Data Persistence
