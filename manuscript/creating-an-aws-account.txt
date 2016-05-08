@@ -1,0 +1,21 @@
+## Creating an AWS Account
+
+By now you should have a DockerHub account ready for pushing and pulling images.
+The other requirement for this book, is to have an AWS account.
+Right now the two best integrations for Kubernetes are AWS and Google Compute Engine.
+We will focus on AWS since I believe is a more mature Cloud provider at the moment.
+
+If you don't have an AWS account already, go to the [official website](https://aws.amazon.com/)
+and create one. As a warning, in this tutorial we'll be using resources not
+covered by the [Free Tier](https://aws.amazon.com/free/) mainly because
+a Rails application needs a bit more amount of computer resources
+than the minimal offered by AWS. We're also going to need access to the Load Balancer
+and S3 resources. But don't worry, after finish the tutorial, you can
+drop the entire cluster with just one command and you are only would have to pay
+for the time it was up.
+
+The good thing about the Kubernetes integration with these services (AWS and GCE)
+is that you don't even have to use their panels for the resources. This is because
+the Kubernetes command for creating the cluster will create all the necessary resources for us.
+We only have to configure the initial size of the cluster, the region and the type
+of instances we want to create.
