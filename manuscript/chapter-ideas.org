@@ -1,6 +1,6 @@
-* TODO Part I: Development[0%]
+* TODO Part I: Development[100%]
 
-** TODO Setting up the development environment[5/6]
+** DONE Setting up the development environment[6/6]
 
 *** DONE Creating a new Rails app
     CLOCK: [2016-05-07 Sat 10:30]--[2016-05-07 Sat 10:41] =>  0:11
@@ -17,7 +17,7 @@
 *** DONE Adding a Search Engine
     CLOCK: [2016-05-07 Sat 21:30]--[2016-05-07 Sat 22:15] =>  0:45
 
-*** TODO Pushing our project to DockerHub
+*** DONE Pushing our project to DockerHub
     CLOCK: [2016-05-08 Sun 11:37]--[2016-05-08 Sun 11:45] =>  0:08
     
 * Part II: Production[0%]
