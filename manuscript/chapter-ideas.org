@@ -15,6 +15,7 @@
     CLOCK: [2016-05-07 Sat 16:52]--[2016-05-07 Sat 17:43] =>  0:51
 
 *** TODO Adding a Search Engine
+    CLOCK: [2016-05-07 Sat 21:15]
 
 *** TODO Pushing our project to DockerHub
     
