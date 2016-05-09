@@ -12,15 +12,13 @@ Let's add some environmental variables to our rc profile (.zshrc or .bashrc depe
 on what shell you're using):
 
     export KUBERNETES_PROVIDER=aws
-    export KUBE_AWS_ZONE=us-west-2a
-    export NUM_NODES=4
+    export NUM_NODES=2
     export MASTER_SIZE=t2.small
     export NODE_SIZE=t2.small
-    export AWS_S3_REGION=us-west-2a
     export INSTANCE_PREFIX=k8s
 
 Here we are setting the cluster configuration, which for now will have
-4 machines of site t2.small in the us-west-2a region.
+2 machines of site t2.small using the default kubernetes region (us-west-2a).
 Now run a `source` command against the file so the variables are exported 
 for the current sessions.
 
@@ -31,7 +29,169 @@ We can run one command that will install Kubernetes and will create the cluster 
     cd ~
     export KUBERNETES_PROVIDER=aws; curl -sS https://get.k8s.io | bash
 
+After running this command, you'll see a lot of output. The instances will be launched, 
+the security groups will be created, etc. You'll have to wait a couple of minutes
+until the cluster es created correctly.
+Once it finishes, the last part of the log should say something like this:
+
+    Kubernetes cluster is running.  The master is running at:
+
+      https://KUBE_IP_ADDRESS
+
+    The user name and password to use is located in /Users/pacuna/.kube/config.
+
+    ... calling validate-cluster
+    Waiting for 2 ready nodes. 0 ready nodes, 0 registered. Retrying.
+    Waiting for 2 ready nodes. 0 ready nodes, 1 registered. Retrying.
+    Waiting for 2 ready nodes. 1 ready nodes, 2 registered. Retrying.
+    Found 2 node(s).
+    NAME                                        STATUS    AGE
+    ip-172-20-0-20.us-west-2.compute.internal   Ready     37s
+    ip-172-20-0-21.us-west-2.compute.internal   Ready     52s
+    Flag --api-version has been deprecated, flag is no longer respected and will be deleted in the next release
+    Validate output:
+    NAME                 STATUS    MESSAGE              ERROR
+    controller-manager   Healthy   ok
+    scheduler            Healthy   ok
+    etcd-0               Healthy   {"health": "true"}
+    etcd-1               Healthy   {"health": "true"}
+    Cluster validation succeeded
+    Done, listing cluster services:
+
+    Kubernetes master is running at https://KUBE_IP_ADDRESS
+    Elasticsearch is running at https://KUBE_IP_ADDRESS/api/v1/proxy/namespaces/kube-system/services/elasticsearch-logging
+    Heapster is running at https://KUBE_IP_ADDRESS/api/v1/proxy/namespaces/kube-system/services/heapster
+    Kibana is running at https://KUBE_IP_ADDRESS/api/v1/proxy/namespaces/kube-system/services/kibana-logging
+    KubeDNS is running at https://KUBE_IP_ADDRESS/api/v1/proxy/namespaces/kube-system/services/kube-dns
+    kubernetes-dashboard is running at https://KUBE_IP_ADDRESS/api/v1/proxy/namespaces/kube-system/services/kubernetes-dashboard
+    Grafana is running at https://KUBE_IP_ADDRESS/api/v1/proxy/namespaces/kube-system/services/monitoring-grafana
+    InfluxDB is running at https://KUBE_IP_ADDRESS/api/v1/proxy/namespaces/kube-system/services/monitoring-influxdb
+
+
+You can see Kubernetes is telling you the IP address of your cluster, along
+with all the services that come by default. Some of these services
+are very useful for inspecting and monitoring your cluster.
+Before going to this endpoints, let's see what the script has created for us
+in our aws account. We are going to use the CLI for interacting with our
+resources.
+First let's list the EC2 Instances:
+
+    aws ec2 describe-instances --query 'Reservations[*].Instances[*].[State.Name, InstanceId]' --output text --region us-west-2
+
+Output:
+
+    running	i-ba8a9962
+    running	i-bd8a9965
+    running	i-aa8a9972
+
+So you can see that we have 3 instances. Two of these are nodes and one corresponds
+to a master node. 
+To add more nodes to our cluster will be very easy task, since the script
+has also created an auto-scaling group for us:
+
+    aws autoscaling describe-auto-scaling-groups --output text --region us-west-2 --query 'AutoScalingGroups[*].AutoScalingGroupName'
+
+Output:
+
+    kubernetes-minion-group-us-west-2a
+
+With this autoscaling group, we can add nodes to our cluster with no further
+configuration. As a matter of fact, let's add 2 more nodes to our cluster, since
+we will need a couple more resources for running our application with all its
+dependencies. Using the name from the previous output run the following command:
+
+    aws autoscaling update-auto-scaling-group --auto-scaling-group-name kubernetes-minion-group-us-west-2a --min-size 4 --max-size 4 --desired-capacity 4 --region us-west-2
+
+This command will update the number of instance of the group and our cluster.
+You can also do this using the console panel from AWS (although using commmands
+is way more reusable).
+
+After a couple of minutes, if you list your instances again:
+
+    aws ec2 describe-instances --query 'Reservations[*].Instances[*].[State.Name, InstanceId]' --output text --region us-west-2
+
+Output:
+
+    running	i-cab1a212
+    running	i-cbb1a213
+    running	i-ba8a9962
+    running	i-bd8a9965
+    running	i-aa8a9972
+
+You'll see that now we have five instances running. Four nodes and one master node.
+
 ### Inspecting the cluster configuration and endpoints
+
+Kubernetes comes with a very handy and useful command line tool called `kubectl`.
+Let's add the binary to our path so we can use it with no problems.
+Assuming you installed Kubernetes in your home path (~), add the following to
+your .bashrc or .zshrc file:
+
+    export PATH=~/kubernetes/platforms/darwin/amd64:$PATH
+
+And remember to source that file or restart your terminal. Let's see if the
+tool is working:
+
+    kubectl get nodes
+
+Output:
+
+    NAME                                        STATUS    AGE
+    ip-172-20-0-20.us-west-2.compute.internal   Ready     32m
+    ip-172-20-0-21.us-west-2.compute.internal   Ready     32m
+    ip-172-20-0-57.us-west-2.compute.internal   Ready     38s
+    ip-172-20-0-58.us-west-2.compute.internal   Ready     43s
+
+The `get nodes` commands is giving us the names of all of the nodes of the cluster.
+The configuration for this tool is being read from the ~/.kube folder that
+Kubernetes created during the launching process. All of our cluster configuration, 
+including addresses, users and passwords are there, so you have to be careful
+is you're playing with those files.
+If you want to display this configuration in a more friendly way, you can run:
+
+    kubectl config view
+
+Output:
+
+    apiVersion: v1
+    clusters:
+    - cluster:
+        certificate-authority-data: REDACTED
+        server: https://KUBE_IP_ADDRESS
+      name: aws_kubernetes
+    contexts:
+    - context:
+        cluster: aws_kubernetes
+        user: aws_kubernetes
+      name: aws_kubernetes
+    current-context: aws_kubernetes
+    kind: Config
+    preferences: {}
+    users:
+    - name: aws_kubernetes
+      user:
+        client-certificate-data: REDACTED
+        client-key-data: REDACTED
+        token: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+    - name: aws_kubernetes-basic-auth
+      user:
+        password: xxxxxxxxxxxxxxxx
+        username: xxxxx
+
+There you have the IP address of our cluster and the credentials for login into it.
+
+If you open your browser and visit your cluster's IP address, you'll need to
+fill out the form using these credentials. Once your on the root path, you'll
+see all of the available endpoints. For now let's check the main dashboard.
+Go to `https://IP_ADDRESS/ui`:
+
+You'll see the beautiful Kubernetes dashboard. If you click on `Show them`, you'll
+see all of the current services running on our cluster. All of these application, such
+as elasticsearch, kibana, graphana, the dns server, influxdb, etc, are running in containers
+that belong to a system namespace of Kubernetes. What we want, is to run
+our own containers in the cluster.
+
+
 
 ### Creating pods and services for the DB and SE
 
