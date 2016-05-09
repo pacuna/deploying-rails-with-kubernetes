@@ -187,11 +187,12 @@ Go to `https://IP_ADDRESS/ui`:
 
 You'll see the beautiful Kubernetes dashboard. If you click on `Show them`, you'll
 see all of the current services running on our cluster. All of these application, such
-as elasticsearch, kibana, graphana, the dns server, influxdb, etc, are running in containers
+as Elasticsearch, Kibana, Graphana, the DNS server, InfluxDB, etc, are running in containers
 that belong to a system namespace of Kubernetes. What we want, is to run
 our own containers in the cluster.
 
-
+You can see that Kubernetes has taken all of the complexity that comes with creating a cluster, security
+and configuration, and lets you focus only on deploying your applications.
 
 ### Creating pods and services for the DB and SE
 
