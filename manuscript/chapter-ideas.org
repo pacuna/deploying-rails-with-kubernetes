@@ -24,16 +24,17 @@
 
 ** DONE Creating an AWS account
 
-** TODO Kubernetes[0/4]
+** TODO Kubernetes[1/4]
 
 *** TODO Basic concepts
 
-*** TODO Installing kb8 and creating the cluster
+*** DONE Installing kb8 and creating the cluster
+    CLOCK: [2016-05-08 Sun 15:43]--[2016-05-08 Sun 16:06] =>  0:23
 
-*** TODO Creating pods and services for the DB and the SE
-**** Pods
-**** Services
-**** Data Persistence
+*** DONE Creating pods and services for the DB and the SE
+**** DONE Pods
+**** DONE Services
+**** DONE Data Persistence
 
 *** TODO Creating an RC and a Service for our Application
 

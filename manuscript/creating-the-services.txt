@@ -1,0 +1,260 @@
+### Creating pods and services for the DB and SE
+
+The pods and services for the database and the search engine will be pretty simple.
+The only complexity introduced by these kinds of containers is how are
+you planning for persisting your data. The good thing about Kubernetes
+is that it has a solid integration with the [Amazon EBS](https://aws.amazon.com/ebs/)
+which is the persistence method that AWS offers. These blocks will hold our
+data while the containers can be floating around through the cluster.
+
+Let's do two thing so we can keep our code organized, first we are going to
+create a folder in the root of the project that will contain all of our Kubernetes templates:
+
+    mkdir -p deploy/kube
+
+Second, let's create a template for the production namespace in which we'll
+deploy our services. This way we can keep separated the different environments
+(production, staging in our case) that we'll be using in our cluster.
+
+    mkdir -p deploy/kube/namespaces
+    touch deploy/kube/namespaces/production.yaml
+
+
+And add the following to that template:
+
+    apiVersion: v1
+    kind: Namespace
+    metadata:
+      name: production
+
+Now we can use the kubectl tool for creating the namespace in our cluster:
+
+    kubectl create -f deploy/kube/namespaces/production.yaml
+
+Output:
+
+    namespace "production" created
+    
+#### Data Persistence
+
+Before we write the templates for the pods, let's create the EBS
+that will hold the data for postgres and elasticsearch. We can create both
+of these volumes by using the AWS CLI that we previously configured.
+Run the following command in order to create the postgres Volume:
+
+    aws ec2 create-volume --availability-zone us-west-2a --size 10 --volume-type gp2 --region us-west-2
+
+Output:
+
+    {
+        "AvailabilityZone": "us-west-2a",
+        "Encrypted": false,
+        "VolumeType": "gp2",
+        "VolumeId": "SOME_VOLUME_ID",
+        "State": "creating",
+        "Iops": 30,
+        "SnapshotId": "",
+        "CreateTime": "2016-05-10T01:16:45.916Z",
+        "Size": 10
+    }
+
+The data we'll need is the `VolumeId`. So save that for later.
+Let's created another one for Elasticsearch:
+
+    aws ec2 create-volume --availability-zone us-west-2a --size 10 --volume-type gp2 --region us-west-2
+
+Output:
+
+    {
+        "AvailabilityZone": "us-west-2a",
+        "Encrypted": false,
+        "VolumeType": "gp2",
+        "VolumeId": "SOME_VOLUME_ID",
+        "State": "creating",
+        "Iops": 30,
+        "SnapshotId": "",
+        "CreateTime": "2016-05-10T01:18:33.097Z",
+        "Size": 10
+    }
+
+Write down this `VolumeId` also for later usage. We are going to use both 
+of the VolumesIds for the pod templates.
+
+#### Pods
+
+Now that we have our two EBSs for persisting the data, let's create the templates
+for the database and for the search engine.
+Let's start with the database. Create the following file:
+
+    mkdir -p deploy/kube/pods
+    touch deploy/kube/pods/postgres.yaml
+
+And add the following to that template replacing the VolumeId with
+the first one you got early:
+
+    apiVersion: v1
+    kind: Pod
+    metadata:
+      name: postgres
+      labels: 
+        name: postgres
+    spec: 
+      containers: 
+        - resources:
+          image: postgres:9.4
+          name: postgres
+          env:
+            - name: POSTGRES_PASSWORD
+              value: secretpassword
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          ports: 
+            - containerPort: 5432
+              name: postgres
+          volumeMounts:
+            - name: postgres-persistent-storage
+              mountPath: /var/lib/postgresql/data
+      volumes:
+        - name: postgres-persistent-storage
+          awsElasticBlockStore:
+            volumeID: VOLUME_ID
+            fsType: ext4
+
+And for elasticsearch:
+
+    $ touch deploy/kube/pods/elasticsearch.yaml
+
+And add the following to the template replacing the VolumeId with the second
+one we created:
+
+    apiVersion: v1
+    kind: Pod
+    metadata:
+      name: elasticsearch
+      labels: 
+        name: elasticsearch
+    spec: 
+      containers: 
+        - resources:
+          image: elasticsearch:2
+          name: elasticsearch
+          ports: 
+            - containerPort: 9200
+              name: http
+              protocol: TCP
+            - containerPort: 9300
+              name: transport
+              protocol: TCP
+          volumeMounts:
+            - name: elasticsearch-persistent-storage
+              mountPath: /usr/share/elasticsearch/data
+      volumes:
+        - name: elasticsearch-persistent-storage
+          awsElasticBlockStore:
+            volumeID: VOLUME_ID
+            fsType: ext4
+
+And now we can launch the pods in our production namespace:
+
+    $ kubectl create -f deploy/kube/pods/postgres.yaml --namespace production
+
+Output:
+
+    pod "postgres" created
+
+    $ kubectl create -f deploy/kube/pods/elasticsearch.yaml --namespace production
+
+Output:
+
+    pod "elasticsearch" created
+
+If you now run:
+
+    kubectl get pods --namespace production
+
+Output:
+
+    NAME            READY     STATUS    RESTARTS   AGE
+    elasticsearch   1/1       Running   0          12s
+    postgres        1/1       Running   0          24s
+
+#### Services
+
+The best way to direct traffic from our application to these resources it's
+to create services associated to the pods. This way we can have a DNS alias
+to connect to the corresponding endpoints.
+
+Let's create the folder and the templates:
+
+    mkdir -p deploy/kube/services
+    touch deploy/kube/services/postgres-svc.yaml
+    touch deploy/kube/services/elasticsearch-svc.yaml
+
+And add the following to the postgres-svc yam file:
+
+    apiVersion: v1
+    kind: Service
+    metadata: 
+      labels: 
+        name: postgres
+      name: postgres
+    spec: 
+      ports:
+        - port: 5432
+      selector: 
+        name: postgres
+
+and for the elasticsearch-svc yaml file:
+
+    apiVersion: v1
+    kind: Service
+    metadata: 
+      labels: 
+        name: elasticsearch
+      name: elasticsearch
+    spec: 
+      ports:
+        - name: http
+          port: 9200
+          protocol: TCP
+        - name: transport
+          port: 9300
+          protocol: TCP
+      selector: 
+        name: elasticsearch
+
+These two services will be associated to the previously created pods.
+Kubernetes will create all of the necessary resources in AWS so you don't
+have to take care of anything.
+Now let's launch these services:
+
+    kubectl create -f deploy/kube/services/postgres-svc.yaml --namespace production
+
+Output:
+
+    service "postgres" created
+
+And:
+
+
+    kubectl create -f deploy/kube/services/elasticsearch-svc.yaml --namespace production
+
+Output:
+
+    service "elasticsearch" created
+
+If you run:
+
+    $ kubectl get services --namespace production
+
+You'll get something similar to this:
+
+    NAME            CLUSTER-IP     EXTERNAL-IP   PORT(S)             AGE
+    elasticsearch   10.0.204.179   <none>        9200/TCP,9300/TCP   31s
+    postgres        10.0.139.208   <none>        5432/TCP            1m
+
+As you can see, we only have internal IPs for this services. We don't need
+external address since the only connection that these services should establish
+is with our web application. Our application is going to able to reach the endpoints
+of these services by using the service name declared in the templates, which are
+`postgres` and `elasticsearch`.

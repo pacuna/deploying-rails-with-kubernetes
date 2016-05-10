@@ -193,11 +193,3 @@ our own containers in the cluster.
 
 You can see that Kubernetes has taken all of the complexity that comes with creating a cluster, security
 and configuration, and lets you focus only on deploying your applications.
-
-### Creating pods and services for the DB and SE
-
-#### Pods
-
-#### Services
-
-#### Data Persistence
