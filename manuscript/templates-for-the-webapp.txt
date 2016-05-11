@@ -1,0 +1,243 @@
+### Templates for the Rails application
+
+#### Preparing our application for production
+
+Before running our application in the production environment we have to prepare
+our application. 
+
+First, let's add the correct endpoints for the production environment for
+the database and the search engine. Open the config/database.yml file and add:
+
+    production:
+      adapter: postgresql
+      encoding: unicode
+      database: myapp_production
+      username: postgres
+      host: postgres.production
+      password: secretpassword
+      pool: 5
+
+We have to use `postgres.production` for our host since it's running
+in the production namespace and that's the Kubernetes convention for naming
+services inside of namespaces.
+
+Now open the config/initializers/elasticsearch.rb file and add the following:
+
+
+    if Rails.env.production?
+      host = 'elasticsearch.production'
+    else
+      host = 'elasticsearch'
+    end
+
+    Elasticsearch::Model.client = Elasticsearch::Client.new host: "http://#{host}:9200"
+
+    # Print Curl-formatted traces in development into a file
+    #
+    if Rails.env.development?
+      tracer = ActiveSupport::Logger.new('log/elasticsearch.log')
+      tracer.level =  Logger::DEBUG
+    end
+
+    Elasticsearch::Model.client.transport.tracer = tracer
+
+We just added a conditional for using the kubernetes production namespace
+for the production environment.
+
+We also need to add a secret_token for production. You can get one
+by running:
+
+    # rake secret
+
+Inside of your application container. Then paste that result in your config/secrets.yml file
+in the production environment section:
+
+    production:
+      secret_key_base: verylongsecrettoken
+
+Finally, we need to add an script than compiles the application assets.
+The passenger image provides us a very elegant and easy way for accomplish this.
+
+We are going to add a post-execution script during the build of the image.
+Open the Dockerfile and add the following:
+
+    ...
+    WORKDIR /home/app/webapp
+
+    RUN mkdir -p /etc/my_init.d
+    ADD deploy/start.sh /etc/my_init.d/start.sh
+    ...
+
+Now we have to create the start.sh file that will be executed after the build:
+
+    touch deploy/start.sh
+    chmod +x deploy/start.sh
+
+And add the following to it:
+
+    #!/bin/sh
+
+    if [ "$PASSENGER_APP_ENV" = "production" ]; then
+        mkdir -p tmp/cache
+        chown -R app:app tmp
+        chmod 777 -R tmp/cache
+        chown -R app:app public
+        touch log/production.log
+        chown -R app:app log
+        RAILS_ENV=production bundle install &&
+        RAILS_ENV=production bundle exec rake db:create &&
+        RAILS_ENV=production bundle exec rake db:migrate &&
+        RAILS_ENV=production bundle exec rake assets:precompile --trace
+    else
+        rm -rf public/assets
+    fi
+
+As you can see, we are making sure that all the permissions are correctly setted
+and running the necessary production commands. All of these commands will only
+be ran when the environment corresponds to production.
+
+Now we should be ready. If you want to test this setup locally (and you should), you can
+change the `PASSENGER_APP_ENV` variable in your docker-compose.yml file in the
+webapp service from development to production, replace the production database configuration for the development one
+and also the endpoint for Elasticsearch in the correspondent initializer. Then you can run `docker-compose build` and `docker-compose up` and
+if you see your application running, then you're ready to go.
+
+Now let's build our new version of the image and push it to Dockerfile.
+We are going to tag it with version 2:
+
+    docker build -t username/myapp:2 .
+    docker push username/myapp:2
+
+Once it finishes, we can use the image in a pod for deploying it
+on production.
+
+#### Replication Controller
+
+If we want to scale our application at some moment, we have to
+create a replication controller instead of a single pod for running it.
+This way later we can create replicas for the pod if we need more
+containers serving the application.
+
+Let's create the template for the replication controller:
+
+    mkdir -p deploy/kube/rcs
+    touch deploy/kube/rcs/myapp-production.yaml
+
+And add the following to the template:
+
+    apiVersion: v1
+    kind: ReplicationController
+    metadata:
+      name: myapp-v2
+    spec:
+      replicas: 1
+      selector:
+        app: myapp
+        deployment: v2
+      template:
+        metadata:
+          name: myapp
+          labels:
+            app: myapp
+            deployment: v2
+        spec:
+          containers:
+          - name: myapp
+            image: username/myapp:2
+            ports:
+              - containerPort: 80
+            env:
+              - name: PASSENGER_APP_ENV
+                value: production
+
+And the service that's going to route requests to the pods managed
+by this replication controller:
+
+    touch deploy/kube/services/myapp-svc.yaml
+
+And add the following:
+
+    apiVersion: v1
+    kind: Service
+    metadata:
+      name: myapp-service
+    spec:
+      ports:
+      - port: 80
+        targetPort: 80
+      selector:
+        app: myapp
+      type: LoadBalancer
+
+This service will be different than the others. It has a Load Balancer attached, 
+so it can be accessed from addresses external to the cluster. Which is
+want we want.
+
+Let's create this service and replication controller in our cluster:
+
+    $ kubectl create -f deploy/kube/services/myapp-svc.yaml --namespace production
+
+Output:
+
+    service "myapp-service" deleted
+
+    $ kubectl create -f deploy/kube/rcs/myapp-production.yaml --namespace production
+
+Output:
+
+    replicationcontroller "myapp-v2" created
+
+If you run:
+
+    $ kubectl describe replicationcontrollers --namespace production
+
+You'll get something like this:
+
+
+    Name:		myapp-v2
+    Namespace:	production
+    Image(s):	pacuna/myapp:2
+    Selector:	app=myapp,deployment=v2
+    Labels:		app=myapp,deployment=v2
+    Replicas:	1 current / 1 desired
+    Pods Status:	1 Running / 0 Waiting / 0 Succeeded / 0 Failed
+    No volumes.
+    Events:
+      FirstSeen	LastSeen	Count	From				SubobjectPath	Type		Reason			Message
+      ---------	--------	-----	----				-------------	--------	------			-------
+      1m		1m		1	{replication-controller }			Normal		SuccessfulCreate	Created pod: myapp-v2-i8dll
+
+Which means that the pod for our app it was successfully created.
+
+Now wait for a few minutes, and run this command in order to see the endpoint of our
+load balancer:
+
+    kubectl describe service myapp --namespace production
+
+Output:
+
+    Name:			myapp-service
+    Namespace:		production
+    Labels:			<none>
+    Selector:		app=myapp
+    Type:			LoadBalancer
+    IP:			10.0.160.160
+    LoadBalancer Ingress:	adff1155b171211e6a279065abcbcf5b-1127508601.us-west-2.elb.amazonaws.com
+    Port:			<unset>	80/TCP
+    NodePort:		<unset>	30345/TCP
+    Endpoints:		10.244.2.4:80
+    Session Affinity:	None
+    Events:
+      FirstSeen	LastSeen	Count	From			SubobjectPath	Type		Reason			Message
+      ---------	--------	-----	----			-------------	--------	------			-------
+      3m		3m		1	{service-controller }			Normal		CreatingLoadBalancer	Creating load balancer
+      3m		3m		1	{service-controller }			Normal		CreatedLoadBalancer	Created load balancer
+
+As you can see in my case, the endpoint is 'adff1155b171211e6a279065abcbcf5b-1127508601.us-west-2.elb.amazonaws.com'.
+
+So now you can browse to that address and see the application in action. You should be
+able to see the `/articles` path and play with the scaffold.
+If the address is not available, wait for a couple of minutes. That's because
+the load balancer can take some time to create, but this is going to be only
+the first time, since this endpoint will not change anymore. All of the updates
+added in future deploy will be reflected in the replication controller and not in the service.
