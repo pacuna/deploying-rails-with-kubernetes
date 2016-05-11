@@ -233,9 +233,9 @@ Output:
       3m		3m		1	{service-controller }			Normal		CreatingLoadBalancer	Creating load balancer
       3m		3m		1	{service-controller }			Normal		CreatedLoadBalancer	Created load balancer
 
-As you can see in my case, the endpoint is 'adff1155b171211e6a279065abcbcf5b-1127508601.us-west-2.elb.amazonaws.com'.
+As you can see in my case, the endpoint is `adff1155b171211e6a279065abcbcf5b-1127508601.us-west-2.elb.amazonaws.com`.
 
-So now you can browse to that address and see the application in action. You should be
+So now you can browse to the address you got and see your application in action. You should be
 able to see the `/articles` path and play with the scaffold.
 If the address is not available, wait for a couple of minutes. That's because
 the load balancer can take some time to create, but this is going to be only

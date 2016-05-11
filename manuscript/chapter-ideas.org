@@ -1,4 +1,4 @@
-* TODO Part I: Development[100%]
+* DONE Part I: Development[100%]
 
 ** DONE Setting up the development environment[6/6]
 
@@ -20,7 +20,7 @@
 *** DONE Pushing our project to DockerHub
     CLOCK: [2016-05-08 Sun 11:37]--[2016-05-08 Sun 11:45] =>  0:08
     
-* Part II: Production[50%]
+* TODO Part II: Production[50%]
 
 ** DONE Creating an AWS account
 
@@ -37,6 +37,11 @@
 **** DONE Data Persistence
 
 *** TODO Creating an RC and a Service for our Application
+
+**** DONE preparing the application for production
+**** DONE creating the RC
+**** DONE creating the service
+**** TODO making changes (rolling updates)
 
 * Part III: CI[0%]
 
