@@ -10,3 +10,4 @@ creating-an-aws-account.txt
 installation-and-creating-the-cluster.txt
 creating-the-services.txt
 templates-for-the-webapp.txt
+making-changes.txt
