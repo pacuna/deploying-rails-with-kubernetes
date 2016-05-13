@@ -2,11 +2,12 @@
 
 #### Preparing our application for production
 
-Before running our application in the production environment we have to prepare
-our application. 
+Before we're able to run our application in the production environment we have
+make some changes.
 
-First, let's add the correct endpoints for the production environment for
-the database and the search engine. Open the config/database.yml file and add:
+First, let's add the correct endpoints for the production Database and Search Engine.
+
+Open the config/database.yml file and add:
 
     production:
       adapter: postgresql
@@ -17,12 +18,14 @@ the database and the search engine. Open the config/database.yml file and add:
       password: secretpassword
       pool: 5
 
-We have to use `postgres.production` for our host since it's running
-in the production namespace and that's the Kubernetes convention for naming
-services inside of namespaces.
+The Kubernetes convention for the DNS of a resource that's running in a namespace
+different than the default one, is to use the service name, followed by a dot
+and the namespace. Our Database service name is `postgres`, and the namespace
+is `production` so we have to use `postgres.production` and that will
+return the internal endpoint for the DB.
 
-Now open the config/initializers/elasticsearch.rb file and add the following:
-
+Now open the `config/initializers/elasticsearch.rb` file and modify the configuration
+by changing it to:
 
     if Rails.env.production?
       host = 'elasticsearch.production'
@@ -41,25 +44,29 @@ Now open the config/initializers/elasticsearch.rb file and add the following:
 
     Elasticsearch::Model.client.transport.tracer = tracer
 
-We just added a conditional for using the kubernetes production namespace
-for the production environment.
+Following the same logic, the internal endpoint for Elasticsearch is represented
+by `elasticsearch.production`.
+In this case we're adding a conditional for selecting the Elasticsearch
+host depending on the environment.
 
-We also need to add a secret_token for production. You can get one
+We also need to add a `secret_token` for the production environment. You can get one
 by running:
 
     # rake secret
 
-Inside of your application container. Then paste that result in your config/secrets.yml file
-in the production environment section:
+Inside of the myapp container. Paste that result into the `config/secrets.yml` file
+in the correspondent section:
 
     production:
       secret_key_base: verylongsecrettoken
 
 Finally, we need to add an script than compiles the application assets.
-The passenger image provides us a very elegant and easy way for accomplish this.
+The passenger image provides us a very elegant and easy way to accomplish this.
 
-We are going to add a post-execution script during the build of the image.
-Open the Dockerfile and add the following:
+We are going to add a script during the build of the image but that will be
+executed before the container starts.
+
+Open the `Dockerfile`, search for this section and add the following:
 
     ...
     WORKDIR /home/app/webapp
@@ -68,7 +75,7 @@ Open the Dockerfile and add the following:
     ADD deploy/start.sh /etc/my_init.d/start.sh
     ...
 
-Now we have to create the start.sh file that will be executed after the build:
+Now we have to create the `start.sh` file:
 
     touch deploy/start.sh
     chmod +x deploy/start.sh
@@ -92,31 +99,34 @@ And add the following to it:
         rm -rf public/assets
     fi
 
-As you can see, we are making sure that all the permissions are correctly setted
-and running the necessary production commands. All of these commands will only
-be ran when the environment corresponds to production.
+This is a very basic bash script that checks for the `PASSENGER_APP_ENV` variable
+during the build. In this case we are only executing some commands for the production
+environment. We have to make sure that all of the permissions are correctly setted
+for the `tmp` and `log` folders, and then we run all the typical commands for a post deployment 
+for a Rails application.
 
-Now we should be ready. If you want to test this setup locally (and you should), you can
-change the `PASSENGER_APP_ENV` variable in your docker-compose.yml file in the
-webapp service from development to production, replace the production database configuration for the development one
-and also the endpoint for Elasticsearch in the correspondent initializer. Then you can run `docker-compose build` and `docker-compose up` and
-if you see your application running, then you're ready to go.
+Now we should be ready. It's a good idea to test this setup in your local environment.
+For that, you just need to replace the credentials for Postgres and Elasticsearch
+for the development ones, and change the `PASSENGER_APP_ENV` variable in your
+`docker-compose.yml` from `development` to `production`. Then you need to rebuild
+you containers by running `docker-compose build` and `docker-compose up -d` as
+usual. This way you'll be simulating a deployment and you can test that all is in order. 
+After you test everything is OK, remember to replace the variables
+for the production ones.
 
-Now let's build our new version of the image and push it to Dockerfile.
-We are going to tag it with version 2:
+Now let's build our production-ready version of the image and push it to the DockerHub.
+This time we'll tag it with version 2:
 
     docker build -t username/myapp:2 .
     docker push username/myapp:2
 
-Once it finishes, we can use the image in a pod for deploying it
-on production.
-
 #### Replication Controller
 
-If we want to scale our application at some moment, we have to
-create a replication controller instead of a single pod for running it.
-This way later we can create replicas for the pod if we need more
-containers serving the application.
+If we want to scale our application at some point, we're going to need
+a replication controller instead of a regular pod.
+This way we can create replicas for the pod managed by this controller if more
+more containers are needed. It is also going to make the deployments of new version
+a lot more easier by using rolling-updates.
 
 Let's create the template for the replication controller:
 
@@ -150,8 +160,23 @@ And add the following to the template:
               - name: PASSENGER_APP_ENV
                 value: production
 
-And the service that's going to route requests to the pods managed
-by this replication controller:
+The kind for this template is `ReplicationController`. The most important
+metadata attribute is the name. This name will identify this controller and
+it will be used for identifying and replacing the pod during new releases.
+Then we have the spec section. First we declare the number of replicas, which
+corresponds to the number of containers that will be attached to the Load Balancer.
+This value can also be modified without having downtime by running a simple command with
+the kubectl tool. Inside of the spec we also need a selector so we can later
+attach a service to this controller and its pods. We are also adding a 
+selector for the deployment version. This variable will help us later for deploying new
+versions.
+The template contains the information of the pod that this controller will be
+managing. We also need some metadata, and then the specs for the container.
+Here we're going to use the image we just pushed to DockerHub along with
+the port that should be exposed, and the necessary environment variables.
+
+Now let's create a service for routing the requests to the pods managed
+by the controller:
 
     touch deploy/kube/services/myapp-svc.yaml
 
@@ -169,11 +194,16 @@ And add the following:
         app: myapp
       type: LoadBalancer
 
-This service will be different than the others. It has a Load Balancer attached, 
-so it can be accessed from addresses external to the cluster. Which is
-want we want.
+The most important part of this template is the type. The type in this case
+must be `LoadBalancer`. If we don't use that, we are not going to have an external
+address with a Load Balancer routing requests to the controller pods. And that is not what we want.
+That's the difference between this kind of service and services for other back-end
+elements such a databases and search engines. Those services usually don't need
+to be externally open, and it doesn't matter is they are not running in the same host
+the application is. That's the magic of container clusterization. You can achieve
+a transparent private communication between your services but controlling their exposure.
 
-Let's create this service and replication controller in our cluster:
+Let's create the service and the replication controller in our cluster:
 
     $ kubectl create -f deploy/kube/services/myapp-svc.yaml --namespace production
 
@@ -187,43 +217,44 @@ Output:
 
     replicationcontroller "myapp-v2" created
 
-If you run:
+
+You can describe a replication controller with:
 
     $ kubectl describe replicationcontrollers --namespace production
 
-You'll get something like this:
+Output:
 
 
-    Name:		myapp-v2
+    Name:       myapp-v2
     Namespace:	production
     Image(s):	pacuna/myapp:2
     Selector:	app=myapp,deployment=v2
-    Labels:		app=myapp,deployment=v2
+    Labels:     app=myapp,deployment=v2
     Replicas:	1 current / 1 desired
-    Pods Status:	1 Running / 0 Waiting / 0 Succeeded / 0 Failed
+    Pods Status:1 Running / 0 Waiting / 0 Succeeded / 0 Failed
     No volumes.
     Events:
       FirstSeen	LastSeen	Count	From				SubobjectPath	Type		Reason			Message
       ---------	--------	-----	----				-------------	--------	------			-------
       1m		1m		1	{replication-controller }			Normal		SuccessfulCreate	Created pod: myapp-v2-i8dll
 
-Which means that the pod for our app it was successfully created.
+Which means the pod for our app was successfully created and in my case has a name of `myapp-v2-i8dll`.
 
-Now wait for a few minutes, and run this command in order to see the endpoint of our
-load balancer:
+Now wait for a few minutes, and run this command in order to see the endpoint for our
+Load Balancer:
 
-    kubectl describe service myapp --namespace production
+    $ kubectl describe service myapp --namespace production
 
 Output:
 
-    Name:			myapp-service
+    Name:		myapp-service
     Namespace:		production
-    Labels:			<none>
+    Labels:		<none>
     Selector:		app=myapp
-    Type:			LoadBalancer
+    Type:		LoadBalancer
     IP:			10.0.160.160
-    LoadBalancer Ingress:	adff1155b171211e6a279065abcbcf5b-1127508601.us-west-2.elb.amazonaws.com
-    Port:			<unset>	80/TCP
+    LoadBalancer Ingress:   adff1155b171211e6a279065abcbcf5b-1127508601.us-west-2.elb.amazonaws.com
+    Port:		<unset>	80/TCP
     NodePort:		<unset>	30345/TCP
     Endpoints:		10.244.2.4:80
     Session Affinity:	None
@@ -234,10 +265,14 @@ Output:
       3m		3m		1	{service-controller }			Normal		CreatedLoadBalancer	Created load balancer
 
 As you can see in my case, the endpoint is `adff1155b171211e6a279065abcbcf5b-1127508601.us-west-2.elb.amazonaws.com`.
+This is the Amazon ELB that Kubernetes created for routing request to the cluster, specifically
+to the pods managed by the myapp controller.
 
-So now you can browse to the address you got and see your application in action. You should be
-able to see the `/articles` path and play with the scaffold.
-If the address is not available, wait for a couple of minutes. That's because
-the load balancer can take some time to create, but this is going to be only
-the first time, since this endpoint will not change anymore. All of the updates
-added in future deploy will be reflected in the replication controller and not in the service.
+So now you can navigate to the address you got and see your application in action. You should be
+able to see the `/articles` path and play with the scaffold with no problems.
+
+If the address is not available, wait for a couple of minutes. Sometimes
+the Load Balancer can take some time to create, but this is going to be only
+the first time, since this endpoint will not change anymore. All the updates
+added in future deployments will be reflected in the replication controller and 
+not in the service.
