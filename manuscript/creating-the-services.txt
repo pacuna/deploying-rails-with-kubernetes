@@ -47,7 +47,7 @@ of these volumes by using the AWS CLI that was previously configured.
 
 Run the following command to create the Postgres Volume:
 
-    aws ec2 create-volume --availability-zone us-west-2a --size 10 --volume-type gp2 --region us-west-2
+    $ aws ec2 create-volume --availability-zone us-west-2a --size 10 --volume-type gp2 --region us-west-2
 
 Output:
 
@@ -67,7 +67,7 @@ The value we'll need is the `VolumeId`. So save that for later.
 
 Let's created another one for Elasticsearch by using the same command:
 
-    aws ec2 create-volume --availability-zone us-west-2a --size 10 --volume-type gp2 --region us-west-2
+    $ aws ec2 create-volume --availability-zone us-west-2a --size 10 --volume-type gp2 --region us-west-2
 
 Output:
 
@@ -93,8 +93,8 @@ for the database and for the search engine.
 
 Let's start with the database. First create the template:
 
-    mkdir -p deploy/kube/pods
-    touch deploy/kube/pods/postgres.yaml
+    $ mkdir -p deploy/kube/pods
+    $ touch deploy/kube/pods/postgres.yaml
 
 And add the following to that template. Replace the `volumeId` in the 
 volumes section with the first one you got earlier:
@@ -192,7 +192,7 @@ Output:
 
 We can list the pods with this command:
 
-    kubectl get pods --namespace production
+    $ kubectl get pods --namespace production
 
 Output:
 
@@ -212,9 +212,9 @@ and route requests to it.
 
 Let's create the folder and the services templates:
 
-    mkdir -p deploy/kube/services
-    touch deploy/kube/services/postgres-svc.yaml
-    touch deploy/kube/services/elasticsearch-svc.yaml
+    $ mkdir -p deploy/kube/services
+    $ touch deploy/kube/services/postgres-svc.yaml
+    $ touch deploy/kube/services/elasticsearch-svc.yaml
 
 Add the following to the `postgres-svc.yaml` file:
 
@@ -258,7 +258,7 @@ to the template.
 
 Now let's launch these services:
 
-    kubectl create -f deploy/kube/services/postgres-svc.yaml --namespace production
+    $ kubectl create -f deploy/kube/services/postgres-svc.yaml --namespace production
 
 Output:
 
@@ -266,7 +266,7 @@ Output:
 
 And:
 
-    kubectl create -f deploy/kube/services/elasticsearch-svc.yaml --namespace production
+    $ kubectl create -f deploy/kube/services/elasticsearch-svc.yaml --namespace production
 
 Output:
 
