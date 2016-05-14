@@ -2,6 +2,56 @@
 
 ### Basic Concepts
 
+If you've used a container orchestration before you probably know that usually
+they are very concept-oriented. All of them have different structures and ways
+of managing the cluster, and of course Kubernetes has its own.
+
+In this section I'll talk briefly about the concepts you should know when working
+with Kubernetes. All of these elements can be defined inside of yaml templates. This
+will provide us a nice way for versioning our infrastructure and for a fast
+creation and deletion of resources.
+
+#### Pods
+
+A pod is the most basic unit of deployment in Kubernetes. If you are going to
+deploy a container, you have to use a Pod that runs this container. You can
+run more than one container in a pod if you want. I haven't seen too many 
+scenarios in which you would want to do this, but there are some. 
+Normally you would deploy one container inside of a Pod and manage the replicas
+by using the next unity: the replication controller.
+
+#### Replication Controller
+
+The replication controller will help up to manage our Pods. If you want to run
+several replicas of a Pod, you want to use a replication controller. This controller
+will make sure that all the desired number of pods are always running.
+You can define the specification of the Pod for a controller in the same template.
+
+#### Services
+
+The service is the element that will allow us to have static endpoints for our
+pods. Every time you create new releases all of the old pods will be deleted
+and new ones will be placed and scheduled in the cluster. Because of that, you cannot
+use pods addresses for connecting your applications.
+The other limitation arises when you have a replication controller managing
+more than one pod. How are going to balance the requests to those pods? The answer
+for both of these problems are services. A service can be attached to a pod
+or a controller and have a static endpoint that allows communication with other services.
+It also can act as a Load Balancer if you declare that's what you want in the service
+template. There are several types of services in Kubernetes but in this books we'll be
+using the basic ones, internals and external Load Balancers.
+
+#### Namespaces
+
+Namespaces are defined as virtual clusters inside of the real cluster. In a few
+words, they allow you to have resource isolation for different environments that
+you may want to have in the cluster. We're going to use namespaces for controlling
+the resources for our production and staging environments.
+
+Like I said before, all of this elements can be defined inside of yaml templates
+with certain identifiers that will allow Kubernetes to connect the pieces between
+pods, controllers and services.
+
 ### Installation and creating the cluster
 
 For installing Kubernetes and creating the cluster, we'll be following
