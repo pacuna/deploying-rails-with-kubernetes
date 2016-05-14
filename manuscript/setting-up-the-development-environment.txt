@@ -1,1 +1,34 @@
 ## Setting up the Development Environment
+
+The only requirements for this part of the book, are Ruby/Rails and Docker.
+We only need Ruby and Rails for creating a new application and Docker to run
+this application.
+
+### Installing Ruby/Rails
+
+If you don't have a recent version of any of these, I recommend you to use
+some Ruby version manager such as [rbenv](https://github.com/rbenv/rbenv) or [rvm](https://rvm.io/).
+Any of those should work for the Ruby version we need which in this case
+is `2.3.0dev` but any version equal or higher than `2.2.2` should work.
+
+We also need Rails installed so we can create a fresh application.
+A couple of days ago the first Rails 5 rc version was released, so I'll be using
+that version. After you set up your Ruby version, you can use the `gem install`
+command and install the most recent Rails 5 version. For example in my case
+I used:
+
+    gem install rails --version 5.0.0.rc1 --no-ri --no-rdoc
+
+in order to get the latest version.
+
+### Installing Docker
+
+Today we have several options for running Docker. If you're on OS X you can use
+[Docker Machine](https://docs.docker.com/machine/), [Docker for Mac](https://beta.docker.com/)
+which by the moment is only available through invitation but maybe you're reading this
+when it's already out. Finally you can also run a Linux Virtual Machine and
+run a copy of native Docker. For windows you have the same options and for linux
+you can enjoy the best experience with native Docker.
+Any of these should work, just check that you're using the latest version
+for Docker and for Docker Compose. In my case I'm running `Docker version 1.11.1, build 5604cbe`
+and `docker-compose version 1.7.1, build 0a9ab35`.
