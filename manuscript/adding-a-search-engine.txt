@@ -4,18 +4,17 @@ In order to make things more interesting and to put ourselves in a more
 realistic scenario, let's add a search engine to our application.
 
 Elasticsearch has a really nice integration with Rails via
-the [elasticsearch-rails gem](https://github.com/elastic/elasticsearch-rails).
+the [Elasticsearch-rails gem](https://github.com/elastic/elasticsearch-rails).
 
 The steps we need to follow in order to add this gem to our project are:
 
 1. Add the necessary gems
 2. Add the new service to our docker-compose.yml file
-3. Add the initializer for connecting with elasticsearch
+3. Add the initializer for connecting with Elasticsearch
 4. Add the Elasticsearch modules to our Article model
 5. Run `docker-compose` build and `docker-compose up`
 
 Open the Gemfile an add the following:
-
 
     gem 'elasticsearch-model', git: 'git://github.com/elasticsearch/elasticsearch-rails.git'
     gem 'elasticsearch-rails', git: 'git://github.com/elasticsearch/elasticsearch-rails.git'
@@ -27,7 +26,6 @@ And then run `bundle install` inside of the container:
 
 We are going to use the [official DockerHub image for elasticsearch](https://hub.docker.com/_/elasticsearch/)
 in our docker-compose.yml file. Add the following service:
-
 
 Now open the docker-compose.yml file and add the following services:
 
@@ -45,13 +43,12 @@ Now open the docker-compose.yml file and add the following services:
         - /var/lib/elasticsearch
       command: /bin/true
 
-As you can see, we're also adding a data only container for persisting
+As you can see, we're also adding a data-only container for persisting
 the Elasticsearch data locally in case we need to recreate our container.
 
 In order to use the gem in our Rails application, we must add an initializer
-with the configuration. Create a new file under config/initializers/elasticsearch.rb
-with the following code:
-
+with the configuration. Create the file `config/initializers/elasticsearch.rb`
+and add the following code:
 
     host = 'elasticsearch'
 
@@ -67,16 +64,17 @@ with the following code:
     Elasticsearch::Model.client.transport.tracer = tracer
 
 We can use the host `elasticsearch` for this service since we declared it
-with that name in our network in the docker-compose.yml.
-Let's also create a task under lib/tasks/elasticsearch.rake with the following:
+with that name in our network in the docker-compose.yml file. The rest of the code
+is for debugging purposes.
 
+Let's also create the task `lib/tasks/elasticsearch.rake` with the following code:
 
     require 'elasticsearch/rails/tasks/import'
 
-This will gives us a handy command for indexing all records for the models
-associated to the elasticsearch documents.
+This will gives us a handy command for indexing all the records for the models
+associated to Elasticsearch documents.
 
-Right now we only have the Article model so open app/models/article.rb and
+Right now we only have the Article model so open `app/models/article.rb` and
 add the following:
 
     class Article < ApplicationRecord
@@ -86,25 +84,28 @@ add the following:
 
 Those modules will include the necessary hooks for indexing the records.
 
-Now we can run docker-compose:
+Rebuild the project:
 
     docker-compose build
     docker-compose up
 
-Now, let's add a couple of records to our database:
+And add a couple of records to the database:
 
-    docker exec -it myapp bash
+    $ docker exec -it myapp bash
     # rails c
     > Article.create(title: 'article 1', body: 'body for article 1')
     > Article.create(title: 'article 2', body: 'body for article 2')
     > Article.create(title: 'article 3', body: 'body for article 3')
 
-This article should be indexed immediately thanks to the callbacks
+These articles should be indexed immediately thanks to the callbacks
 added by the Elasticsearch modules in the model. Let's perform a search
 just to be sure:
 
     > Article.search("3").results.first
     => #<Elasticsearch::Model::Response::Result:0x0000000467f508 @result=#<Hashie::Mash _id="4" _index="articles" _score=0.30935922 _source=#<Hashie::Mash body="body for article 3" created_at="2016-05-08T00:49:37.329Z" id=4 title="article 3" updated_at="2016-05-08T00:49:37.329Z"> _type="article">>
+
+You can see in the result that we're in fact searching in the Elasticsearch index
+and we found a match.
 
 If you have previous records you want to index, you can run the task
 provided by the gem:
