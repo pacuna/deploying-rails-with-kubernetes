@@ -1,16 +1,16 @@
 # Development
 
-In this chapter we will create a fresh Rails 5 application and we will
-dockerize it will production-ready images so we can test it locally
+In this chapter we will create and dockerize a fresh Rails 5 application.
+We are going to use production-ready images so we can test the production setup locally
 before run it in production. That's one of the best advantages of using Docker.
 We can simulate a similar production environment and that way make sure
 that all is going to work as a long as we use the same images and
 versions for the software.
 
-The application that we are going to build is just a regular Rails application
+The application that we are going to build will be just a regular Rails application
 with some scaffolds. This application will be connected to a Database and a Search
 Engine which in this case are going to be Postgres and Elasticsearch. We are not
-adding to much complexity to the application because is not as relevant as the
+adding to much complexity to the application logic because is not as relevant as the
 setup for connecting all of the different elements in the architecture and the 
-deployment workflow. This workflow goes from pushing new features to DockerHub
+deployment workflow. This workflow will go from pushing new features to DockerHub
 to deploying new releases to a staging environment and finally to production.
