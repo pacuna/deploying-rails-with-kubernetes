@@ -3,27 +3,28 @@
 Now that we have our application up and running, let's scaffold a resource
 so later we can test more than just the Rails welcome page.
 The application is running inside of the phusion passenger container, and
-we have to options for interacting with the application. The first options
-is to run commands by using docker-compose as wrapper. For example
+we have two options for interacting with the application. The first option
+is to run commands by using docker-compose as a wrapper. For example
 we could run:
 
-    docker-compose run webapp rails c
+    $ docker-compose run webapp rails c
 
-And that would take us to the webapp service defined in our docker-compose
-which corresponds to the myapp application and open a rails console
+And that would take us to the `webapp` service defined in our docker-compose
+which corresponds to the myapp application, and open a rails console
 inside of it.
-Option number two would be to create a bash session inside of the container
-and run the commands. For example:
 
-    docker exec -it myapp bash
+The second option would be to create a bash session inside of the container
+and run the commands directly there. For example:
+
+    $ docker exec -it myapp bash
     # rails c
 
-The first command takes you to the container and then you can run
+The first command takes you to the container and from there you can run
 any rails or rake commands you want. 
-I prefer to use the second approach, since using docker-compose for running
-commands will create a container for running the commands, and that container will
-stay there using memory. You can see this by running some commands using `docker-compose run`
-and then listing all of the containers by using:
+I prefer to use the second approach simply because using docker-compose for running
+commands will create containers for running everyone of these commands, and those containers will
+stay there using disk space. You can see this by running some commands using `docker-compose run`
+and then listing all of the containers:
 
     docker ps -a
 
@@ -34,15 +35,16 @@ Output:
     bda9ef328673        myapp_webapp            "rails c"                2 minutes ago       Exited (0) About a minute ago                                 myapp_webapp_run_1
     85f1508c8705        myapp_webapp            "/sbin/my_init"          2 hours ago         Up 7 minutes                    0.0.0.0:80->80/tcp, 443/tcp   myapp
 
-You see that we have our application running by the name of `myapp` but also
-we have two containers that were created for running the commands. Of course
-the status of those is exited since they were created just for running a command.
+You see that we have our application running with the name `myapp`, but we also
+have two containers that were created just for running the rails commands. Of course
+the status of those containers is exited since they were created just for that.
+
 When you use `docker exec` instead, you are just going inside of the running
-container and not creating extra containers. So let's just stick with that approach.
+container and not creating an extra one. So let's just stick with that approach.
 
 Let's go inside of the container and create a very simple scaffold:
 
-    docker exec -it myapp bash
+    $ docker exec -it myapp bash
     # rails g scaffold article title:string body:text
     # rake db:migrate
 
@@ -65,4 +67,4 @@ Output:
 
     7 runs, 12 assertions, 0 failures, 0 errors, 0 skips
 
-We will use these tests later for testing our deployments.
+We will use these tests later in our Continuous Integration chapter.
