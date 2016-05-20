@@ -5,9 +5,6 @@ Let's create a new Rails application:
 
     rails new myapp
  
- We are not using any options by now. We'll be adding more features and dependencies progressively.
+We are not using any options by now. We'll be adding more features and dependencies progressively.
 
- If you run `rails s` you should be able to see the application running locally on `http://localhost:3000`.
-
-
-
+If you run `rails s` you should be able to see the application running locally on `http://localhost:3000`.
