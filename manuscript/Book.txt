@@ -1,3 +1,4 @@
+introduction.txt
 development.txt
 setting-up-the-development-environment.txt
 creating-a-new-rails-app.txt
