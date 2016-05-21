@@ -1,0 +1,11 @@
+## Prerequisites
+
+I expect you to have a medium knowledge about Docker and its workflow. It's
+OK if you have never worked with Docker in a production environment.
+
+Since this is a book about deploying Ruby on Rails, you should also have a medium
+to advanced Rails knowledge. I won't explain basic things about Ruby or Rails.
+
+We are going to work with Postgres as our Database and Elasticsearch as our search engine.
+You don't need previous knowledge about any of these two. The main focus it's going to
+be on how to create the connexions between our application and these type components.

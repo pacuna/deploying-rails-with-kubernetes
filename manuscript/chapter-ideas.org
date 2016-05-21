@@ -1,3 +1,7 @@
+* TODO PRE
+** TODO Introduction
+** TODO pre-requisites
+** TODO Symbology
 * DONE Part I: Development[100%]
 
 ** DONE Setting up the development environment[6/6]
@@ -20,13 +24,13 @@
 *** DONE Pushing our project to DockerHub
     CLOCK: [2016-05-08 Sun 11:37]--[2016-05-08 Sun 11:45] =>  0:08
     
-* TODO Part II: Production[50%]
+* DONE Part II: Production[100%]
 
 ** DONE Creating an AWS account
+   
+** DONE Kubernetes[4/4]
 
-** TODO Kubernetes[1/4]
-
-*** TODO Basic concepts
+*** DONE Basic concepts
 
 *** DONE Installing kb8 and creating the cluster
     CLOCK: [2016-05-08 Sun 15:43]--[2016-05-08 Sun 16:06] =>  0:23
@@ -36,12 +40,12 @@
 **** DONE Services
 **** DONE Data Persistence
 
-*** TODO Creating an RC and a Service for our Application
+*** DONE Creating an RC and a Service for our Application
 
 **** DONE preparing the application for production
 **** DONE creating the RC
 **** DONE creating the service
-**** TODO making changes (rolling updates)
+**** DONE making changes (rolling updates)
 
 * Part III: CI[0%]
 
@@ -54,4 +58,3 @@
 ** TODO Running our test suite
 
 ** TODO Adding an staging environment
-
