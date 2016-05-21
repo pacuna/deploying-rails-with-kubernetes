@@ -9,3 +9,32 @@ to advanced Rails knowledge. I won't explain basic things about Ruby or Rails.
 We are going to work with Postgres as our Database and Elasticsearch as our search engine.
 You don't need previous knowledge about any of these two. The main focus it's going to
 be on how to create the connexions between our application and these type components.
+
+## Conventions
+
+Navigating between the different layers when you're running containers, specially
+if you are running Docker inside of a Virtual Machine, can become a little messy.
+You need to know where you are at every moment.
+In order to not pollute all of the code with explanations, I'll be using the 
+following conventions:
+
+- Every line that starts with the `$` symbol, means that the command should be run
+at same same level where Docker is installed. That can be your local machine, or
+the Virtual Machine where you have your Docker host running.
+
+- Every line that starts with the `#` symbol, means that the command should be run
+inside of a container.
+
+- Every line that stats with the `>` symbol, means that the command should be run
+inside of the Rails console.
+
+Sometimes you'll see all the symbols in action so you can have more context.
+For example:
+
+    $ docker exec -it myapp bash
+    # rails c
+    > puts 'hello world!'
+
+A special case will be to run commands on a remote host.
+In that case I'll still be using the `$` command but it's going to be 
+pretty clear that the commands should be run on the remote host.
