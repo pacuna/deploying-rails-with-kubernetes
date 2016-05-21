@@ -77,8 +77,8 @@ Open the `Dockerfile`, search for this section and add the following:
 
 Now we have to create the `start.sh` file:
 
-    touch deploy/start.sh
-    chmod +x deploy/start.sh
+    $ touch deploy/start.sh
+    $ chmod +x deploy/start.sh
 
 And add the following to it:
 
@@ -117,8 +117,8 @@ for the production ones.
 Now let's build our production-ready version of the image and push it to the DockerHub.
 This time we'll tag it with version 2:
 
-    docker build -t username/myapp:2 .
-    docker push username/myapp:2
+    $ docker build -t username/myapp:2 .
+    $ docker push username/myapp:2
 
 #### Replication Controller
 
@@ -130,8 +130,8 @@ a lot more easier by using rolling-updates.
 
 Let's create the template for the replication controller:
 
-    mkdir -p deploy/kube/rcs
-    touch deploy/kube/rcs/myapp-production.yaml
+    $ mkdir -p deploy/kube/rcs
+    $ touch deploy/kube/rcs/myapp-production.yaml
 
 And add the following to the template:
 
@@ -178,7 +178,7 @@ the port that should be exposed, and the necessary environment variables.
 Now let's create a service for routing the requests to the pods managed
 by the controller:
 
-    touch deploy/kube/services/myapp-svc.yaml
+    $ touch deploy/kube/services/myapp-svc.yaml
 
 And add the following:
 

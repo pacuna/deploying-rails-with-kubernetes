@@ -135,19 +135,19 @@ And then add the following to your `config/database.yml` file:
 
 Now let's rebuild our application:
 
-    docker-compose stop
-    docker-compose build
+    $ docker-compose stop
+    $ docker-compose build
 
 And run up:
 
-    docker-compose up
+    $ docker-compose up
 
 This will pull the postgres image, run the container and create
 the user and database we specified before.
 
 Now we just need to run the migrations for our scaffold:
 
-    docker exec -it myapp bash
+    $ docker exec -it myapp bash
     # rake db:migrate
 
 And that's it!, now you can visit your application connected to the postgres

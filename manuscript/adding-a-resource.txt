@@ -26,7 +26,7 @@ commands will create containers for running everyone of these commands, and thos
 stay there using disk space. You can see this by running some commands using `docker-compose run`
 and then listing all of the containers:
 
-    docker ps -a
+    $ docker ps -a
 
 Output:
 

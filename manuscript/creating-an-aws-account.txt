@@ -41,7 +41,7 @@ default. If you're not, contact your account administrator for the access.
 Now you can install the [CLI](http://aws.amazon.com/cli/) via `pip` (it requires python)
 by running:
 
-    pip install awscli
+    $ pip install awscli
 
 We have to tell the CLI which credentials should use. The easiest way is to copy
 the credentials in a file with the path `~/.aws/credentials`. Add the following
@@ -56,7 +56,7 @@ will be doing most of the work by using this tool.
 
 In order to check that the configuration is working, run the following command:
 
-    aws configure list
+    $ aws configure list
 
 Output:
 

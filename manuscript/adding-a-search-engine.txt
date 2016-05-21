@@ -21,7 +21,7 @@ Open the Gemfile an add the following:
 
 And then run `bundle install` inside of the container:
 
-    docker exec -it myapp bash
+    $ docker exec -it myapp bash
     # bundle install
 
 We are going to use the [official DockerHub image for elasticsearch](https://hub.docker.com/_/elasticsearch/)
@@ -86,8 +86,8 @@ Those modules will include the necessary hooks for indexing the records.
 
 Rebuild the project:
 
-    docker-compose build
-    docker-compose up
+    $ docker-compose build
+    $ docker-compose up
 
 And add a couple of records to the database:
 

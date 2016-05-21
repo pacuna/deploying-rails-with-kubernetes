@@ -122,7 +122,7 @@ the permissions for the passenger user.
 Now, we can build our application with docker-compose. My Docker version is `1.11.1, build 5604cbe`
 and my docker-compose version is `1.7.0, build 0d7bf73`. Let's build the app:
 
-    docker-compose build
+    $ docker-compose build
 
 This can take several minutes the first time since the command will pull the necessary 
 images from DockerHub, update the Linux OS of the container and install the gems.
@@ -130,7 +130,7 @@ Once it finished, you can run the build again and see that is a lot more faster.
 
 Now we can run the application by running:
 
-    docker-compose up
+    $ docker-compose up
 
 Now depending of what you're using for running Docker you cant visit your VM 
 IP address or your Dockerhost address and should be able to see your application running 

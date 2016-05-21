@@ -6,7 +6,7 @@ our case Kubernetes.
 This process is simple enough and the only thing you need is a DockerHub account
 and to log into Docker using the `docker login` command in your local machine:
 
-    docker login
+    $ docker login
 
 That's going to ask for your Docker data and then you would be able to push
 images to your personal account. 
@@ -17,11 +17,11 @@ After creating your account, add a new public DockerHub repository and name it `
 
 Now we can create our web application image tagged with a version number and push it to DockerHub:
 
-    docker build -t username/myapp:1 .
+    $ docker build -t username/myapp:1 .
 
 And then:
 
-    docker push username/myapp:1
+    $ docker push username/myapp:1
 
 If you have any errors during this last command recheck that the `docker login`
 command works fine.

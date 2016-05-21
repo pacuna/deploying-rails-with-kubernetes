@@ -17,7 +17,7 @@ that one. After setting up your Ruby version, you can use the `gem install`
 command and install the most recent version for Rails 5. For example in my case
 I used:
 
-    gem install rails --version 5.0.0.rc1 --no-ri --no-rdoc
+    $ gem install rails --version 5.0.0.rc1 --no-ri --no-rdoc
 
 in order to get the current latest version.
 

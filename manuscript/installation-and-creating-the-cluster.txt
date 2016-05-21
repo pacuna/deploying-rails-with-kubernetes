@@ -76,8 +76,8 @@ for the current sessions.
 
 We can run one command that will install Kubernetes and will create the cluster for us.
 
-    cd ~
-    export KUBERNETES_PROVIDER=aws; curl -sS https://get.k8s.io | bash
+    $ cd ~
+    $ export KUBERNETES_PROVIDER=aws; curl -sS https://get.k8s.io | bash
 
 After running this command, you'll see a lot of output. The instances will be launched, 
 the security groups will be created, etc. You'll have to wait a couple of minutes
@@ -126,7 +126,7 @@ in our aws account. We are going to use the CLI for interacting with our
 resources.
 First let's list the EC2 Instances:
 
-    aws ec2 describe-instances --query 'Reservations[*].Instances[*].[State.Name, InstanceId]' --output text --region us-west-2
+    $ aws ec2 describe-instances --query 'Reservations[*].Instances[*].[State.Name, InstanceId]' --output text --region us-west-2
 
 Output:
 
@@ -139,7 +139,7 @@ to a master node.
 To add more nodes to our cluster will be very easy task, since the script
 has also created an auto-scaling group for us:
 
-    aws autoscaling describe-auto-scaling-groups --output text --region us-west-2 --query 'AutoScalingGroups[*].AutoScalingGroupName'
+    $ aws autoscaling describe-auto-scaling-groups --output text --region us-west-2 --query 'AutoScalingGroups[*].AutoScalingGroupName'
 
 Output:
 
@@ -150,7 +150,7 @@ configuration. As a matter of fact, let's add 2 more nodes to our cluster, since
 we will need a couple more resources for running our application with all its
 dependencies. Using the name from the previous output run the following command:
 
-    aws autoscaling update-auto-scaling-group --auto-scaling-group-name kubernetes-minion-group-us-west-2a --min-size 4 --max-size 4 --desired-capacity 4 --region us-west-2
+    $ aws autoscaling update-auto-scaling-group --auto-scaling-group-name kubernetes-minion-group-us-west-2a --min-size 4 --max-size 4 --desired-capacity 4 --region us-west-2
 
 This command will update the number of instance of the group and our cluster.
 You can also do this using the console panel from AWS (although using commmands
@@ -158,7 +158,7 @@ is way more reusable).
 
 After a couple of minutes, if you list your instances again:
 
-    aws ec2 describe-instances --query 'Reservations[*].Instances[*].[State.Name, InstanceId]' --output text --region us-west-2
+    $ aws ec2 describe-instances --query 'Reservations[*].Instances[*].[State.Name, InstanceId]' --output text --region us-west-2
 
 Output:
 
@@ -182,7 +182,7 @@ your .bashrc or .zshrc file:
 And remember to source that file or restart your terminal. Let's see if the
 tool is working:
 
-    kubectl get nodes
+    $ kubectl get nodes
 
 Output:
 
@@ -199,7 +199,7 @@ including addresses, users and passwords are there, so you have to be careful
 is you're playing with those files.
 If you want to display this configuration in a more friendly way, you can run:
 
-    kubectl config view
+    $ kubectl config view
 
 Output:
 
