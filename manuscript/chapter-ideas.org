@@ -1,7 +1,7 @@
 * TODO PRE
 ** TODO Introduction
-** TODO pre-requisites
-** TODO Symbology
+** DONE pre-requisites
+** DONE Symbology
 * DONE Part I: Development[100%]
 
 ** DONE Setting up the development environment[6/6]

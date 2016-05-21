@@ -9,9 +9,3 @@ dockerizing-the-application.txt
 adding-a-resource.txt
 adding-a-production-ready-db.txt
 adding-a-search-engine.txt
-production.txt
-creating-an-aws-account.txt
-installation-and-creating-the-cluster.txt
-creating-the-services.txt
-templates-for-the-webapp.txt
-making-changes.txt
