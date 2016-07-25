@@ -2,17 +2,17 @@
 
 
 During this chapter we are going to create a new Rails application from scratch
-using the latest version. We are going to build an api-only application to we
+using the latest version. We are going to build an api-only application so we
 can test it easily and also because using containers for deploying heavy web applications
-inside of container is not a good idea in my opinion.
+is not a good idea in my opinion.
 
 If you are an active member of the development community you probably noticed
 that the concept of services is taking more and more importance for web applications.
 That's why we are going to be focused on these types of applications and an API
-is a good representation of an small service that can be successfully deployed
+is a good representation of a small service that can be successfully deployed
 in a container.
 
-First, let me show the versions of the tools we'll use during this section:
+First, let me show you the versions of the tools I'm going to use during this section:
 
 - Ruby 2.3.1
 - Rails 5.0.0
@@ -34,7 +34,7 @@ be able to create the database and run the application:
 
     $ rake db:create
 
-After creating the database, you run the classical `rails s` command, and visit `localhost:3000`
+After creating the database, you can run the `rails s` command and if you visit `localhost:3000`
 you should see the Rails welcome page.
 
 ## Adding a resource
@@ -66,12 +66,12 @@ Output:
 
     5 runs, 7 assertions, 0 failures, 0 errors, 0 skips
 
-If we want to test a couple of endpoints, we can always use curl for
-interacting with our API. First, we have to make sure the server is running:
+If we want to test a couple of endpoints, we can always use cURL for
+interacting with the API. First, we have to make sure the server is running:
 
     $ rails s
 
-And the if we want to create an article we can use something like:
+And then if we want to create an article we can use something like:
 
     $ curl -H "Content-Type: application/json" -X POST -d '{"title":"my first article","body":"Lorem ipsum dolor sit amet, consectetur adipiscing elit..."}' http://localhost:3000/articles
 
@@ -90,7 +90,7 @@ Cool. Now that we have our API pretty much ready, it's time to dockerize the app
 
 ## Dockerizing the application
 
-With all the Docker images available for us today, it's pretty ease to dockerize
+With all the Docker images available for us today, it's pretty easy to dockerize
 an application. In our case we only going to need something for the Rails app
 and something for PostgreSQL. In the case of Rails you have practically the same
 options you have when you don't use containers for deployments, and for PostgreSQL
@@ -112,7 +112,7 @@ and containers configuration work as expected.
 
 Our application needs to be build by using the phusion passenger-docker image. So
 we need a Dockerfile. This Dockerfile is also going to add some extra files.
-The typical configuration that you need for using this image, is the virtual host
+The typical configuration that you need for using this image, are the virtual host
 for your application and a file for declaring the environmental variables
 you may need in your application. First, let's create a file for holding
 the virtual host configuration:
@@ -151,9 +151,9 @@ And add the following:
 We won't be using those variables during development so don't worry about them
 for now.
 
-Now we create the Dockerfile that adds those files along the entire application.
-I've added comments for every instructions so you can know what's happening
-during every step during the build. If you still have doubts about some instructions,
+Now we can create the Dockerfile that's going to add those files along the entire application.
+I've added comments for every instruction so you can know what's happening
+on every step during the build. If you still have doubts about some instructions,
 just go to the [official repository](https://github.com/phusion/passenger-docker) of the image and take a look at the documentation, it's
 really good.
 
@@ -206,10 +206,10 @@ And the content:
 
     EXPOSE 80
 
-That Docker should do the trick for our Rails application. It might seem a little
+That Dockerfile should do the trick for our Rails application. It might seem a little
 bit complicated at first, but trust me, you'll get used to it after building a
 couple of Rails services. The cool thing about this setup, is that you'll be using
-the same server for development an production, so you'll a lot less work to do
+the same server for development and production, so you'll have a lot less work to do
 when you ship to production.
 
 Now that we have the Dockerfile for building our application, we need a Docker
@@ -226,13 +226,14 @@ going to migrate our database.
 Like I mentioned before, we need a mechanism for running some initialization commands.
 In a Rails application, these are typically `rake db:create`, `rake db:migrate`
 and `rake assets:precompile`. We can't run those commands in the same container
-that we're running our web application. That would work fine if your deploying
+that we're running our web application. That would work fine if you're deploying
 only one container, but suppose you want to scale your application and you want to run
 ten containers, then every one of those containers will be trying to execute
 those commands during startup time and things can get ugly. With that said, it's
 always better to separate concerns and use an independent container for running
-tasks and then just remove it once it finishes.
-This setup container has to use the same Dockerfile we create for our web application
+tasks and then just remove them once they finish.
+
+This setup container has to use the same Dockerfile that we created for our web application
 since it needs access to the whole application. The only thing we need to do
 is to overwrite its entrypoint. Right now we don't have an entrypoint for
 our web application container since we want to use the one that the same image
@@ -256,7 +257,7 @@ And add the following:
     rake db:migrate
 
 The whole purpose of this piece of code is to run the possible new
-migrations our application may has. But, what if the database is not yet
+migrations our application may have. But, what if the database is not yet
 available for the rake task? That would generate an error and the whole
 run would crash. That's why we use a while expressions that's going to loop
 until the connection is alive. We are using the `netcat` package for this and assuming
@@ -280,7 +281,7 @@ And the service:
         entrypoint: ./setup.sh
 
 This service will use the Dockerfile we already have for the build. It has
-a dependency on a service we haven't declared yet and which name is postgres.
+a dependency on a service we haven't declared yet and which name will be `postgres`.
 We are also passing an environmental variable for the Rails environment. This is one
 of the ways of setting the `RAILS_ENV` variable for this image and it's described
 in the documentation.
@@ -292,8 +293,8 @@ when it finishes, which is want we want.
 
 This service will be similar to the setup service. The differences are:
 
-- we need to declare a dependency on the setup container it runs after it
-- we need to map the port 80 of the container to our host if we want to access our application via http
+- We need to declare a dependency on the setup container so it always runs after it
+- We need to map the port 80 of the container to our host if we want to access our application via http
 
 We can express all of that with:
 
@@ -309,8 +310,8 @@ We can express all of that with:
 
 ### Database Container
 
-The PostgreSQL will be very simple. We need to pull the postgres:9.5.3 image
-from the DockerHub and set a couple of environmental variables like the user,
+The PostgreSQL service will be very simple. We need to pull the `postgres:9.5.3` image
+from the DockerHub and set up a couple of environmental variables like the user,
 password and database name:
 
     postgres:
@@ -378,11 +379,10 @@ Output:
     ...
     (truncated)
 
-The first you run this command it may take some time, since the Docker engine has
+The first time you run this command it may take some time, since the Docker engine has
 to pull the image, install the dependencies and install the gems. At the end
-you should be something like this in the output:
+you should see something like this in the output:
 
-    ...
     (truncated)
     Step 16 : RUN chown -R app:app /home/app/webapp
      ---> Using cache
@@ -447,14 +447,14 @@ For the PostgreSQL image pull,
     webapp_setup_1  |
     articles_webapp_setup_1 exited with code 0
 
-And here in my case you can see our script in action. If look at the line that says:
+And here in my case you can see our script in action. If you look at the line that says:
 
     webapp_setup_1  | Waiting PostgreSQL to start on 5432...
 
 You can see the setup container trying to connect to the PostgreSQL container
 in order to run the migrations, but the PostgreSQL initialization wasn't ready yet.
-The you see our `PostgreSQL started` almost at the end and then the database migration.
-Finally you can see the setup container was exited.
+Then you see our `PostgreSQL started` message almost at the end and then the database migration being executed.
+You can also see the setup container being exited.
 
 Finally you'll see something like this:
 
@@ -465,7 +465,7 @@ Finally you'll see something like this:
     webapp_1        | [ 2016-07-23 21:59:34.0666 41/7f3ed7fe5780 age/Ust/UstRouterMain.cpp:529 ]: Starting Passenger UstRouter...
     webapp_1        | [ 2016-07-23 21:59:34.0676 41/7f3ed7fe5780 age/Ust/UstRouterMain.cpp:342 ]: Passenger UstRouter online, PID 41
 
-Which indicates that the passenger and processes are ready and listening.
+Which indicates that the passenger and Nginx processes are ready and listening.
 
 Let's test the application via cURL. You should replace the localhost address
 which whatever you're using for running Docker. In my case I'm using Docker for Mac,
@@ -474,7 +474,7 @@ Open a different tab for testing the endpoints:
 
     $ curl -H "Content-Type: application/json" -X POST -d '{"title":"my first article","body":"Lorem ipsum dolor sit amet, consectetur adipiscing elit..."}' http://localhost/articles
 
-Response:
+Output:
 
     {"id":1,"title":"my first article","body":"Lorem ipsum dolor sit amet, consectetur adipiscing elit...","created_at":"2016-07-23T22:06:59.882Z","update...
 
@@ -483,7 +483,7 @@ and see the article we just created.
 
 ## Pushing the app to DockerHub
 
-In order to be able to run our web application on Kubernetes, we need to push
+In order to be able to run our web application with Kubernetes, we need to push
 our image to some registry. Let's use a public repository from DockerHub and
 later I'll show how you can use a private one.
 
@@ -503,17 +503,17 @@ And now push it to your remote repository:
 
     $ docker push username/articles:v_0
 
-Now we are to start writing some Kubernetes files for our application.
+Now we can start writing the Kubernetes templates for deploying our application.
 
 # Production
 
 ## Structuring the files
 
-In order to keep a better structure in our application, let's add
+In order to keep a better application structure, let's add
 some folders that will hold our Kubernetes configuration.
-We'll use a `kube` folder, and two subfolders. `development` and `production`.
+We'll use a `kube` folder, and two subfolders, `development` and `production`.
 As you can imagine, the production templates are going to be a little different
-than the development ones, since some elements cannot be replicated in development
+than the development ones, since some elements cannot be replicated on development
 such as Load Balancers and AWS data storages.
 
     $ mkdir -p kube
@@ -552,7 +552,7 @@ And add the following:
         app: articles
     spec:
       strategy:
-        type: Recreate
+        type: RollingUpdate
       template:
         metadata:
           labels:
@@ -594,9 +594,9 @@ Let's go section by section:
         tier: postgres
       clusterIP: None
 
-The first section of file is the service declaration. In the deployment file
+The first section of the file is the service declaration. In the deployment file
 we can declare more than one kind, and we separate them by using `---`.
-This service has a name `postgres` meaning that we are going to able to use
+This service has a name `postgres` meaning that we are going to be able to use
 that alias for communicating with it from our cluster. It also has a label
 that can be useful for doing filtering.
 The spec section will tell the service where it should be routing
@@ -618,7 +618,7 @@ only accessed from inside the cluster by using `clusterIP` setted to `None`.
         app: articles
     spec:
       strategy:
-        type: Recreate
+        type: RollingUpdate
       template:
         metadata:
           labels:
@@ -738,7 +738,7 @@ And add the following template:
 
 
 Let's go by section. First, the service definition is pretty similar to the one
-we have for the PostgreSQL. The difference here is we are using a difference set of
+we have for the PostgreSQL deployment. The difference here is we are using a difference set of
 selectors. The PostgreSQL uses a tier named `postgres`, and this one uses a tier named
 `frontend`. This way the service can route the requests to the correct replica set
 that has those same labels.
@@ -789,7 +789,7 @@ You can find all of the installation instructions in the [official repository](h
 The version I have on my machine is 0.6.0 and I'll be using the `xhyve` driver.
 You can use whatever is best for your platform.
 You're also going to need the `kubectl` tool for launching the services and
-deployments. [Here](http://kubernetes.io/docs/user-guide/prereqs/) you can find the instructions for install `kubectl`.
+deployments. [Here](http://kubernetes.io/docs/user-guide/prereqs/) you can find the instructions for installing `kubectl`.
 This is all the information I have for the version I have installed:
 
     Client Version: version.Info{Major:"1", Minor:"4+", GitVersion:"v1.4.0-alpha.1", GitCommit:"897d2770950db06d4c6a51f10b4fcf6d389f9736", GitTreeState:"clean", BuildDate:"2016-07-11T20:14:46Z", GoVersion:"go1.6.2", Compiler:"gc", Platform:"darwin/amd64"}
@@ -802,7 +802,7 @@ cluster by running:
 
     $ minikube start
 
-That can take some time the first time. Once it finishes, you should and output
+That can take a few minutes the first time. Once it finishes, you should see an output
 similar to this:
 
     Starting local Kubernetes cluster...
@@ -815,12 +815,12 @@ For example you can run:
 
     $ minikube dashboard
 
-Which will open your default browser and display the Kubernetes graphical
-interface where you can all the workloads of the cluster. Right now we shouldn't
+Which will open your default browser and display the Kubernetes user
+interface where you can see all the workloads running in the cluster. Right now we shouldn't
 have any workload running.
 
 Sadly, Kubernetes currently doesn't have a dependency mechanism like Docker Compose
-does. So we have create our resources in the correct order. Let's start with
+does. So we have to create our resources in the correct order. Let's start with
 the PostgreSQL deployment. Run the following command from the root of the
 application:
 
@@ -859,11 +859,11 @@ to see the events for the pod, you can run:
 
     $ kubectl describe pod postgres
 
-And you'll have a big output that describe the pod specifications and also
+And you'll have a big output that describes the pod specifications and also
 the events in case something goes wrong.
 
 Now that we have our database running, let's launch our setup pod that's
-going to run the migrations for the applications:
+going to run the migrations for the application:
 
     $ kubectl create -f kube/development/setup-pod.yaml
 
@@ -871,7 +871,7 @@ Output:
 
     pod "articles-setup" created
 
-This can take some time the first since it has to pull the entire
+This can take a few minutes the first since it has to pull the entire
 image from DockerHub.
 
 If you run:
@@ -888,7 +888,7 @@ You can see the events at the end of the output:
       3m            3m              1       {kubelet minikubevm}    spec.containers{articles}   Normal          Pulling         pulling image "pacuna/articles:v_0"
 
 And as you can see in my case it's still pulling the image. Wait for couple
-of minutes and rerun the command:
+of minutes and then rerun the command:
 
     $ kubectl describe pod articles-setup
 
@@ -917,7 +917,7 @@ Output:
        -> 0.0085s
     == 20160723153218 CreateArticles: migrated (0.0087s) ==========================
 
-Cool!, so the container ran the migrations and the it died, just what we wanted.
+Cool! So the container ran the migrations and the it died, just what we wanted.
 In case you wonder, that log command receives the pod name and then the container name.
 That's why we use `articles-setup articles`. If you see the pod specification,
 you'll see that the container name we assigned was actually `articles`.
@@ -1030,7 +1030,7 @@ and also configure our database.
 
 In order to allow Kubernetes to run nodes for us in our AWS account, we need to
 first configure this CLI tool with our credentials.
-For that you open the AWS Console interface and go to the Security Credentials
+For that have to go the AWS Console interface and go to the Security Credentials
 section. There you can generate and download a new access key. Make sure
 you put these in a safe place. You can get more info on how to get this credentials
 by visiting at http://docs.aws.amazon.com/cli/latest/userguide/cli-chap-getting-set-up.html
@@ -1059,13 +1059,9 @@ We get:
 
 That's because when we installed Minikube, an specific context was created
 so we could interact with our local cluster by using kubectl.
-Let's create a new context so now we can create a production cluster in AWS:
 
-    $ kubectl config set-context aws
-    $ kubectl config use-context aws
-
-Now if you run `kubectl config current-context` you should get `aws` instead
-Minikube.
+After we create our new AWS cluster, the installation script will create a new
+context for us, so we can switch back and forth between Minikube and the production cluster.
 
 The [getting started guide for AWS](http://kubernetes.io/docs/getting-started-guides/aws/)
 indicates that we can run a simple command for launching a cluster with some
@@ -1073,7 +1069,7 @@ default settings. You have to keep in mind that these resources are not in the
 free-tier, so you may want to delete the entire cluster once you don't need it
 anymore. That way you only are going to pay depending on the amount of hours
 your instances were up.
-The documentation indicates that:
+The documentation also indicates that:
 
 > By default, the script will provision a new VPC and a 4 node k8s cluster in us-west-2a (Oregon) with EC2 instances running on Debian.
 
@@ -1127,9 +1123,9 @@ this:
     Kubernetes binaries at /Users/pacuna/Books/rails-on-kubernetes/articles/kubernetes/cluster/
     You may want to add this directory to your PATH in $HOME/.profile
 
-There you can see all the difference services that Kubernetes installed in our
-cluster along with your base IP. It also has added the configuration credentials
-for this cluster in the ~/.kube/config file. There you should find a segment similar
+There you can see all the different services that Kubernetes installed in our
+cluster and you'll also find your cluster's IP address. It also has added the configuration credentials
+for this cluster in the `~/.kube/config file`. There you should find a segment similar
 to this:
 
 
@@ -1138,11 +1134,11 @@ to this:
         password: xxxxxxxxxxxxxxxx
         username: admin
 
-Visit your the Kubernetes master IP address and use those credentials for login into
+Visit your cluster's IP address and use those credentials for login into
 the cluster. Once you're logged in, you'll first see a list of endpoints you can
 access from there. The dashboard is under the `/ui` namespace. So in my case
 I can visit `https://52.41.37.108/ui` and that'll take me to my production
-cluster dashboard. Now we just need to prepare our templates for production.
+cluster's dashboard. Now we just need to prepare our templates for production.
 
 ## Testing production settings with Minikube
 
@@ -1151,10 +1147,10 @@ shipping it to a production environment. We'll make these changes and then we'll
 to deploy it with Minikube to see if it works. We still won't add persistence storage. We just
 want to check if the Rails production environment works correctly.
 
-First, we need to add a secret toke for production environment. In the root
+First, we need to add a secret token for production environment. In the root
 of your application run:
 
-    `rake secret`
+    rake secret
 
 And copy that token to the `config/secrets.yml` file under the production section.
 
@@ -1187,9 +1183,9 @@ Output:
     articles   1         1         1            1           5h
     postgres   1         1         1            1           5h
 
-We are going to update the web application image so it can pick our latests
-changes. After that, we have to push to DockerHub and update our deployment file
-and setup pod file.
+We are going to update the web application image so it can pick up our latests
+changes. After that, we have to push it to DockerHub and update our articles-deployment file
+and setup-pod file.
 
 First, let's build our new version and push it DockerHub:
 
@@ -1344,12 +1340,12 @@ Output:
 
 Great! So our production setup is ready for our real production cluster. Testing
 your configuration files locally can be a really good practice and it can help you to find
-error quickly, since you won't be running commands remotely.
+errors quickly, since you won't be running commands remotely.
 
 ## Running the templates on production
 
 So, it's time to try our templates on our production cluster. Let's first
-switch to the context the AWS script created for us:
+switch to the context the AWS script created for us (also in the `~/.kube/config` file):
 
     $ kubectl config use-context aws_kubernetes
 
@@ -1362,7 +1358,7 @@ Output:
     NAME         CLUSTER-IP   EXTERNAL-IP   PORT(S)   AGE
     kubernetes   10.0.0.1     <none>        443/TCP   1h
 
-You can see that we only have the Kubernetes service running. Let add ours:
+You can see that we only have the Kubernetes service running. Let add our first one:
 
     $ kubectl create -f kube/production/postgres-deployment.yaml
 
@@ -1391,7 +1387,7 @@ Output:
 And finally for the web application we want to make an small change. Until now
 we have been using a `NodePort` type for the service. Well, now that we are on
 production, we can use a LoadBalancer, so we can have an static endpoint for that
-service. Open the kube/production/articles-deployment.yaml file and change
+service. Open the 'kube/production/articles-deployment.yaml' file and change
 the service type to `LoadBalancer`:
 
     apiVersion: v1
@@ -1438,11 +1434,11 @@ We'll see:
       1m            1m              1       {service-controller }              Normal           CreatedLoadBalancer     Created load balancer
 
 
-So as you can see, Kubernetes created an AWS Load Balancer for us and its associated
+So as you can see, Kubernetes created an AWS Load Balancer for us and it's associated
 to this service. The endpoint is in the `LoadBalancer Ingress` field and my case
 corresponds to `a8d834d4951e811e6a57306e4b278ad1-1983639296.us-west-2.elb.amazonaws.com`.
-You'll have to wait for a few seconds for that endpoint to be live.
-Once it's ready you can our post command using cURL:
+You'll have to wait for a few seconds for that endpoint to be alive.
+Once it's ready you can use the cURL post command:
 
     $ curl -H "Content-Type: application/json" -X POST -d '{"title":"my first article","body":"Lorem ipsum dolor sit amet, consectetur adipiscing elit..."}' http://a8d834d4951e811e6a57306e4b278ad1-1983639296.us-west-2.elb.amazonaws.com/articles
 
@@ -1450,7 +1446,7 @@ Output:
 
     {"id":1,"title":"my first article","body":"Lorem ipsum dolor sit amet, consectetur adipiscing elit...","created_at":"2016-07-24T21:56:47.998Z","updated_at":"2016-07-24T21:56:47.998Z"}%
 
-So we have successfully our Rails API in a Kubernetes cluster. Now
+So we have successfully deployed our Rails API in a Kubernetes cluster. Now
 we are going to dig into more advanced topics such as Volumes for persisting data,
 healthy check endpoints and running deployment updates to our application.
 
@@ -1463,7 +1459,7 @@ file for the service you want to persist. In our case we only need persistence
 for the PostgreSQL container. That way, if the container gets killed, the data
 will remain in the AWS Volume.
 Let's start by creating the volume. We can do this with a very simple command
-from the AWS CLI. The only detail here is that you need use the same region
+from the AWS CLI. The only detail here is that you need to use the same region
 your cluster lives in. If you didn't change the default one, then the region will be
 `us-west-2` and you can use something like `us-west-2a` for the availability zone.
 
@@ -1595,7 +1591,7 @@ Output:
         ]
     }
 
-There you can see the this volume is in fact attached to an instance. That's
+There you can see that this volume is in fact attached to an instance. That's
 the instance that's holding the PostgreSQL container right now.
 
 If we want to do our smoke test one more time to see if the database is working correctly, we
@@ -1606,7 +1602,7 @@ from now on will be able to persist its data.
     $ kubectl delete -f kube/production/setup-pod.yaml
     $ kubectl create -f kube/production/setup-pod.yaml
 
-As always let's check the logs:
+As always let's check out the logs:
 
     $ kubectl logs articles-setup articles
 
@@ -1619,7 +1615,7 @@ Output:
        -> 0.0073s
     == 20160723153218 CreateArticles: migrated (0.0074s) ==========================
 
-We are good to go. Let's do that test:
+We are good to go. Now let's do that test:
 
     $ curl -H "Content-Type: application/json" -X POST -d '{"title":"my first article","body":"Lorem ipsum dolor sit amet, consectetur adipiscing elit..."}' http://a8d834d4951e811e6a57306e4b278ad1-1983639296.us-west-2.elb.amazonaws.com/articles
 
@@ -1659,7 +1655,7 @@ Output:
 
 Awesome. This means we can kill the PostgreSQL anytime we want and the data
 won't be lost. You can apply this trick for persisting any type of data, for example
-from a search engine like Elasticsearch or another database like MySQL or MongoDB.
+for a search engine like Elasticsearch or another database like MySQL or MongoDB.
 
 ## Updating the application
 
@@ -1739,4 +1735,6 @@ Output:
     {"id":2,"title":"my second article","body":"Lorem ipsum dolor sit amet, consectetur adipiscing elit...","created_at":"2016-07-25T01:35:40.113Z","updated_at":"2016-07-25T01:35:40.113Z","slug":"my-second-article"}%
 
 The slug was generated correctly. We just made our first real deployment to our
-application.
+application. In the next section we'll see how to automate this entire process
+with a single operation. For that we'll need to install Jenkins with a couple
+of plugins.
