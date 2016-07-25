@@ -1,0 +1,1742 @@
+# Development
+
+
+During this chapter we are going to create a new Rails application from scratch
+using the latest version. We are going to build an api-only application to we
+can test it easily and also because using containers for deploying heavy web applications
+inside of container is not a good idea in my opinion.
+
+If you are an active member of the development community you probably noticed
+that the concept of services is taking more and more importance for web applications.
+That's why we are going to be focused on these types of applications and an API
+is a good representation of an small service that can be successfully deployed
+in a container.
+
+First, let me show the versions of the tools we'll use during this section:
+
+- Ruby 2.3.1
+- Rails 5.0.0
+- PostgreSQL 9.5.3
+
+Rails 5 has some requirements on the ruby version you should use. So if you're
+using a minor version that mine, you should check the [requirements](http://guides.rubyonrails.org/upgrading_ruby_on_rails.html#upgrading-from-rails-4-2-to-rails-5-0).
+
+## Creating the application
+
+Let's create a new api-only Rails application using [PostgreSQL](https://www.postgresql.org/)
+as our database. This API will be in charge of managing articles with a small
+set of fields.
+
+    $ rails new articles --api --database=postgresql
+
+Now, assuming you have PostgreSQL already configured on your machine, you should
+be able to create the database and run the application:
+
+    $ rake db:create
+
+After creating the database, you run the classical `rails s` command, and visit `localhost:3000`
+you should see the Rails welcome page.
+
+## Adding a resource
+
+We said this was going to be an API for managing articles, so let's create
+a simple resource:
+
+    $ rails g scaffold articles title:string body:text
+
+This scaffold it's actually pretty cool because since our application
+is an api-only application, it'll create a controller already adapted for
+JSON responses. First let's migrate the database:
+
+    $ rake db:migrate
+
+And now run the tests:
+
+    $ rake
+
+Output:
+
+    Run options: --seed 3922
+
+    # Running:
+
+    .....
+
+    Finished in 0.518557s, 9.6421 runs/s, 13.4990 assertions/s.
+
+    5 runs, 7 assertions, 0 failures, 0 errors, 0 skips
+
+If we want to test a couple of endpoints, we can always use curl for
+interacting with our API. First, we have to make sure the server is running:
+
+    $ rails s
+
+And the if we want to create an article we can use something like:
+
+    $ curl -H "Content-Type: application/json" -X POST -d '{"title":"my first article","body":"Lorem ipsum dolor sit amet, consectetur adipiscing elit..."}' http://localhost:3000/articles
+
+Output:
+
+    {"id":1,"title":"my first article","body":"Lorem ipsum dolor sit amet, consectetur adipiscing elit...","created_at":"2016-07-23T15:40:53.352Z"
+
+That means the article was indeed created in our database. Just in case you don't
+believe me:
+
+    $ rails c
+    > Article.first
+    => #<Article id: 1, title: "my first article", body: "Lorem ipsum dolor sit amet, consectetur adipiscing...", created_at: "2016-07-23 15:40:53", updated_at: "2016-07-23 15:40:53">
+
+Cool. Now that we have our API pretty much ready, it's time to dockerize the application.
+
+## Dockerizing the application
+
+With all the Docker images available for us today, it's pretty ease to dockerize
+an application. In our case we only going to need something for the Rails app
+and something for PostgreSQL. In the case of Rails you have practically the same
+options you have when you don't use containers for deployments, and for PostgreSQL
+we can use the official image from DockerHub.
+For Ruby/Rails I strongly recommend you to use the [phusion passenger-docker](https://github.com/phusion/passenger-docker) image.
+It has a lot of features and a very nice documentation. You can have a solid
+production application server out of the box with that image, so we will stick
+with that during this book.
+
+The versions I'll be using for this section are:
+
+- Docker Version 1.12
+- Docker Compose version 1.8
+
+First we are going to create a container environment by using Docker Compose.
+That's just for testing, since our final goal is to able to run our system with
+Kubernetes. Nevertheless, this is a good starting point to see if our images
+and containers configuration work as expected.
+
+Our application needs to be build by using the phusion passenger-docker image. So
+we need a Dockerfile. This Dockerfile is also going to add some extra files.
+The typical configuration that you need for using this image, is the virtual host
+for your application and a file for declaring the environmental variables
+you may need in your application. First, let's create a file for holding
+the virtual host configuration:
+
+    $ touch webapp.conf
+
+And add the following to that file:
+
+    server {
+        listen 80;
+        server_name www.webapp.com;
+        root /home/app/webapp/public;
+
+        passenger_enabled on;
+        passenger_user app;
+
+        passenger_ruby /usr/bin/ruby2.3;
+    }
+
+That's a very simple virtual host configuration for Nginx and passenger. This
+file will be added to the available hosts of the server during the container
+build.
+
+Now let's add a file for the environmental variables. We'll put some just
+so we know how to declare them later:
+
+    $ touch rails-env.conf
+
+And add the following:
+
+
+    env SECRET_KEY_BASE;
+    env DATABASE_URL;
+    env DATABASE_PASSWORD;
+
+We won't be using those variables during development so don't worry about them
+for now.
+
+Now we create the Dockerfile that adds those files along the entire application.
+I've added comments for every instructions so you can know what's happening
+during every step during the build. If you still have doubts about some instructions,
+just go to the [official repository](https://github.com/phusion/passenger-docker) of the image and take a look at the documentation, it's
+really good.
+
+    $ touch Dockerfile
+
+And the content:
+
+    FROM phusion/passenger-ruby23:0.9.19
+
+    # Set correct environment variables.
+    ENV HOME /root
+
+    # Use baseimage-docker's init process.
+    CMD ["/sbin/my_init"]
+
+    # Additional packages: we are adding the netcat package so we can
+    # make pings to the database service
+    RUN apt-get update && apt-get install -y -o Dpkg::Options::="--force-confold" netcat
+
+    # Enable Nginx and Passenger
+    RUN rm -f /etc/service/nginx/down
+
+    # Add virtual host entry for the application. Make sure
+    # the file is in the correct path
+    RUN rm /etc/nginx/sites-enabled/default
+    ADD webapp.conf /etc/nginx/sites-enabled/webapp.conf
+
+    # In case we need some environmental variables in Nginx. Make sure
+    # the file is in the correct path
+    ADD rails-env.conf /etc/nginx/main.d/rails-env.conf
+
+    # Install gems: it's better to build an independent layer for the gems
+    # so they are cached during builds unless Gemfile changes
+    WORKDIR /tmp
+    ADD Gemfile /tmp/
+    ADD Gemfile.lock /tmp/
+    RUN bundle install
+
+    # Copy application into the container and use right permissions: passenger
+    # uses the app user for running the application
+    RUN mkdir /home/app/webapp
+    COPY . /home/app/webapp
+    RUN usermod -u 1000 app
+    RUN chown -R app:app /home/app/webapp
+    WORKDIR /home/app/webapp
+
+
+    # Clean up APT when done.
+    RUN apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+    EXPOSE 80
+
+That Docker should do the trick for our Rails application. It might seem a little
+bit complicated at first, but trust me, you'll get used to it after building a
+couple of Rails services. The cool thing about this setup, is that you'll be using
+the same server for development an production, so you'll a lot less work to do
+when you ship to production.
+
+Now that we have the Dockerfile for building our application, we need a Docker
+Compose file so we can run the database and then test these containers to see
+if everything works fine.
+
+We'll need three services in our Docker Compose file. One for our web application,
+one for the PostgreSQL database, and one for running initialization commands.
+This setup container will be run only once before the actual application, and it's
+going to migrate our database.
+
+### Setup Container
+
+Like I mentioned before, we need a mechanism for running some initialization commands.
+In a Rails application, these are typically `rake db:create`, `rake db:migrate`
+and `rake assets:precompile`. We can't run those commands in the same container
+that we're running our web application. That would work fine if your deploying
+only one container, but suppose you want to scale your application and you want to run
+ten containers, then every one of those containers will be trying to execute
+those commands during startup time and things can get ugly. With that said, it's
+always better to separate concerns and use an independent container for running
+tasks and then just remove it once it finishes.
+This setup container has to use the same Dockerfile we create for our web application
+since it needs access to the whole application. The only thing we need to do
+is to overwrite its entrypoint. Right now we don't have an entrypoint for
+our web application container since we want to use the one that the same image
+is providing for us. But since this setup container doesn't need to be live, we
+can just overwrite it with our initialization commands. Let's create this file:
+
+    $ touch setup.sh
+
+And add the following:
+
+    #!/bin/sh
+
+    echo "Waiting PostgreSQL to start on 5432..."
+
+    while ! nc -z postgres 5432; do
+      sleep 0.1
+    done
+
+    echo "PostgreSQL started"
+
+    rake db:migrate
+
+The whole purpose of this piece of code is to run the possible new
+migrations our application may has. But, what if the database is not yet
+available for the rake task? That would generate an error and the whole
+run would crash. That's why we use a while expressions that's going to loop
+until the connection is alive. We are using the `netcat` package for this and assuming
+that the PostgreSQL service endpoint will be reachable by using the `postgres`
+alias. Finally, when the connection is alive, we can run the latests migrations.
+
+Let's create the `docker-compose.yml` file and add this service:
+
+    $ touch docker-compose.yml
+
+And the service:
+
+    version: '2'
+    services:
+      webapp_setup:
+        build: .
+        depends_on:
+          - postgres
+        environment:
+          - PASSENGER_APP_ENV=development
+        entrypoint: ./setup.sh
+
+This service will use the Dockerfile we already have for the build. It has
+a dependency on a service we haven't declared yet and which name is postgres.
+We are also passing an environmental variable for the Rails environment. This is one
+of the ways of setting the `RAILS_ENV` variable for this image and it's described
+in the documentation.
+Finally, we are overwriting the entrypoint with the previous bash script. Since
+this script doesn't do anything after the migration, the container will be exited
+when it finishes, which is want we want.
+
+### Web Application Container
+
+This service will be similar to the setup service. The differences are:
+
+- we need to declare a dependency on the setup container it runs after it
+- we need to map the port 80 of the container to our host if we want to access our application via http
+
+We can express all of that with:
+
+    webapp:
+      build: .
+      depends_on:
+        - postgres
+        - webapp_setup
+      environment:
+        - PASSENGER_APP_ENV=development
+      ports:
+        - "80:80"
+
+### Database Container
+
+The PostgreSQL will be very simple. We need to pull the postgres:9.5.3 image
+from the DockerHub and set a couple of environmental variables like the user,
+password and database name:
+
+    postgres:
+      image: postgres:9.5.3
+      environment:
+        - POSTGRES_PASSWORD=mysecretpassword
+        - POSTGRES_USER=articles
+
+If we don't declare the database name, the container will create one with the same
+user name. In this case our user and database will be `articles`. Since the container
+will create this database during startup, we don't need to run `rake db:create`
+in our application initialization script.
+
+You can get fancy and add data volumes for persisting the database data and for
+mounting your source into the web application container, but since this book
+is more about deployment, and also because later will see how to persist data
+on production by using AWS volumes, let's just leave it like that.
+The final `docker-compose.yml` file should look like this:
+
+    version: '2'
+    services:
+      webapp_setup:
+        build: .
+        depends_on:
+          - postgres
+        environment:
+          - PASSENGER_APP_ENV=development
+        entrypoint: ./setup.sh
+      webapp:
+        build: .
+        depends_on:
+          - postgres
+          - webapp_setup
+        environment:
+          - PASSENGER_APP_ENV=development
+        ports:
+          - "80:80"
+      postgres:
+        image: postgres:9.5.3
+        environment:
+          - POSTGRES_PASSWORD=mysecretpassword
+          - POSTGRES_USER=articles
+
+### Build and Run
+
+Let's run a Docker Compose build first for building our web application and
+setup containers:
+
+    $ docker-compose build
+
+Output:
+
+    postgres uses an image, skipping
+    Building webapp_setup
+    Step 1 : FROM phusion/passenger-ruby23:0.9.19
+    f069f1d21059: Pull complete
+    ecbeec5633cf: Pull complete
+    ea6f18256d63: Pull complete
+    54bde7b02897: Pull complete
+    a3ed95caeb02: Pull complete
+    ce9e695a6234: Pull complete
+    346026b9659b: Extracting [=============================================>     ] 29.16 MB/32.19 MB
+    ffaf5356e027: Download complete
+    85417a8aee4f: Downloading [===============>                                   ] 45.33 MB/147.5 MB
+    ...
+    (truncated)
+
+The first you run this command it may take some time, since the Docker engine has
+to pull the image, install the dependencies and install the gems. At the end
+you should be something like this in the output:
+
+    ...
+    (truncated)
+    Step 16 : RUN chown -R app:app /home/app/webapp
+     ---> Using cache
+     ---> 54deb341aead
+    Step 17 : WORKDIR /home/app/webapp
+     ---> Using cache
+     ---> 1ed66ec118c5
+    Step 18 : RUN apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+     ---> Using cache
+     ---> ac2951626316
+    Step 19 : EXPOSE 80
+     ---> Using cache
+     ---> 47e8a4833c88
+    Successfully built 47e8a4833c88
+
+Meaning that the web application image was successfully built.
+Now we can run the Docker Compose up command to pull the PostgreSQL image, 
+run the initialization script and setup the entire system:
+
+    $ docker-compose up
+
+Some interesting parts you can see in the output are:
+
+
+    Pulling postgres (postgres:9.5.3)...
+    5c90d4a2d1a8: Extracting [=================================================> ] 50.86 MB/51.35 MB
+    5c90d4a2d1a8: Downloading [===========================>                       ] 28.25 MB/51.35 MBd complete
+    c3961b297acc: Download complete
+    ...
+
+For the PostgreSQL image pull,
+
+    postgres_1      | server started
+    postgres_1      | CREATE DATABASE
+    postgres_1      |
+    postgres_1      | CREATE ROLE
+    postgres_1      |
+    postgres_1      |
+    postgres_1      | /docker-entrypoint.sh: ignoring /docker-entrypoint-initdb.d/*
+    postgres_1      |
+    postgres_1      | LOG:  received fast shutdown request
+    postgres_1      | LOG:  aborting any active transactions
+    postgres_1      | waiting for server to shut down....LOG:  autovacuum launcher shutting down
+    postgres_1      | LOG:  shutting down
+    postgres_1      | LOG:  database system is shut down
+    webapp_setup_1  | Waiting PostgreSQL to start on 5432...
+    postgres_1      |  done
+    postgres_1      | server stopped
+    postgres_1      |
+    postgres_1      | PostgreSQL init process complete; ready for start up.
+    postgres_1      |
+    postgres_1      | LOG:  database system was shut down at 2016-07-23 21:59:34 UTC
+    postgres_1      | LOG:  MultiXact member wraparound protections are now enabled
+    postgres_1      | LOG:  database system is ready to accept connections
+    postgres_1      | LOG:  autovacuum launcher started
+    webapp_setup_1  | PostgreSQL started
+    postgres_1      | LOG:  incomplete startup packet
+    webapp_setup_1  | == 20160723153218 CreateArticles: migrating ===================================
+    webapp_setup_1  | -- create_table(:articles)
+    webapp_setup_1  |    -> 0.0095s
+    webapp_setup_1  | == 20160723153218 CreateArticles: migrated (0.0096s) ==========================
+    webapp_setup_1  |
+    articles_webapp_setup_1 exited with code 0
+
+And here in my case you can see our script in action. If look at the line that says:
+
+    webapp_setup_1  | Waiting PostgreSQL to start on 5432...
+
+You can see the setup container trying to connect to the PostgreSQL container
+in order to run the migrations, but the PostgreSQL initialization wasn't ready yet.
+The you see our `PostgreSQL started` almost at the end and then the database migration.
+Finally you can see the setup container was exited.
+
+Finally you'll see something like this:
+
+    webapp_1        | [ 2016-07-23 21:59:34.0235 29/7fcb59860780 age/Wat/WatchdogMain.cpp:1291 ]: Starting Passenger watchdog...
+    webapp_1        | [ 2016-07-23 21:59:34.0414 32/7f7300922780 age/Cor/CoreMain.cpp:982 ]: Starting Passenger core...
+    webapp_1        | [ 2016-07-23 21:59:34.0415 32/7f7300922780 age/Cor/CoreMain.cpp:235 ]: Passenger core running in multi-application mode.
+    webapp_1        | [ 2016-07-23 21:59:34.0433 32/7f7300922780 age/Cor/CoreMain.cpp:732 ]: Passenger core online, PID 32
+    webapp_1        | [ 2016-07-23 21:59:34.0666 41/7f3ed7fe5780 age/Ust/UstRouterMain.cpp:529 ]: Starting Passenger UstRouter...
+    webapp_1        | [ 2016-07-23 21:59:34.0676 41/7f3ed7fe5780 age/Ust/UstRouterMain.cpp:342 ]: Passenger UstRouter online, PID 41
+
+Which indicates that the passenger and processes are ready and listening.
+
+Let's test the application via cURL. You should replace the localhost address
+which whatever you're using for running Docker. In my case I'm using Docker for Mac,
+so my Docker IP is localhost. Also remember not to kill the Docker Compose up process.
+Open a different tab for testing the endpoints:
+
+    $ curl -H "Content-Type: application/json" -X POST -d '{"title":"my first article","body":"Lorem ipsum dolor sit amet, consectetur adipiscing elit..."}' http://localhost/articles
+
+Response:
+
+    {"id":1,"title":"my first article","body":"Lorem ipsum dolor sit amet, consectetur adipiscing elit...","created_at":"2016-07-23T22:06:59.882Z","update...
+
+Awesome! That means our application is up and running. I can go and visit `http://localhost/articles`
+and see the article we just created.
+
+## Pushing the app to DockerHub
+
+In order to be able to run our web application on Kubernetes, we need to push
+our image to some registry. Let's use a public repository from DockerHub and
+later I'll show how you can use a private one.
+
+First, make sure you are logged with your Docker account by running:
+
+    $ docker login
+
+That's going to ask you for your DockerHub credentials. Now go to `https://hub.docker.com/`
+and create a new public repository an name it `articles`.
+
+Now, let's build an initial version of our application. Replace username with yours:
+
+
+    $ docker build -t username/articles:v_0 .
+
+And now push it to your remote repository:
+
+    $ docker push username/articles:v_0
+
+Now we are to start writing some Kubernetes files for our application.
+
+# Production
+
+## Structuring the files
+
+In order to keep a better structure in our application, let's add
+some folders that will hold our Kubernetes configuration.
+We'll use a `kube` folder, and two subfolders. `development` and `production`.
+As you can imagine, the production templates are going to be a little different
+than the development ones, since some elements cannot be replicated in development
+such as Load Balancers and AWS data storages.
+
+    $ mkdir -p kube
+    $ mkdir -p kube/development
+    $ mkdir -p kube/production
+
+## Deployment templates
+
+### PostgreSQL
+
+Let's add a development file for the PostgreSQL deployment:
+
+    $ touch kube/development/postgres-deployment.yaml
+
+And add the following:
+
+    apiVersion: v1
+    kind: Service
+    metadata:
+      name: postgres
+      labels:
+        app: articles
+    spec:
+      ports:
+        - port: 5432
+      selector:
+        app: articles
+        tier: postgres
+      clusterIP: None
+    ---
+    apiVersion: extensions/v1beta1
+    kind: Deployment
+    metadata:
+      name: postgres
+      labels:
+        app: articles
+    spec:
+      strategy:
+        type: Recreate
+      template:
+        metadata:
+          labels:
+            app: articles
+            tier: postgres
+        spec:
+          containers:
+          - image: postgres:9.5.3
+            name: postgres
+            env:
+            - name: POSTGRES_PASSWORD
+              value: mysecretpassword
+            - name: POSTGRES_USER
+              value: articles
+            ports:
+            - containerPort: 5432
+              name: postgres
+
+
+That's kind of a long YAML file (and it'll get bigger), but keep in mind
+that the file contains all the necessary elements that we need for the PostgreSQL
+deployments. It'll generate the Pod, the replica set that's going to manage the pod
+and also the service so our web application and the setup container can reach
+the service by using the same alias we used in development.
+
+Let's go section by section:
+
+    apiVersion: v1
+    kind: Service
+    metadata:
+      name: postgres
+      labels:
+        app: articles
+    spec:
+      ports:
+        - port: 5432
+      selector:
+        app: articles
+        tier: postgres
+      clusterIP: None
+
+The first section of file is the service declaration. In the deployment file
+we can declare more than one kind, and we separate them by using `---`.
+This service has a name `postgres` meaning that we are going to able to use
+that alias for communicating with it from our cluster. It also has a label
+that can be useful for doing filtering.
+The spec section will tell the service where it should be routing
+the requests. In this case is going to match two selectors: app and tier
+with the values articles, which is the main system, and the tier which
+is postgres. The `tier` is the selector that's going to differentiate the
+web application containers and the PostgreSQL container, since both are going
+to have an `app` selector with the value `articles` but a different `tier` selector
+value.
+We are also indicating the communication port should be 5432, which is the standard
+for PostgreSQL, and finally we are telling Kubernetes that this service should be
+only accessed from inside the cluster by using `clusterIP` setted to `None`.
+
+    apiVersion: extensions/v1beta1
+    kind: Deployment
+    metadata:
+      name: postgres
+      labels:
+        app: articles
+    spec:
+      strategy:
+        type: Recreate
+      template:
+        metadata:
+          labels:
+            app: articles
+            tier: postgres
+        spec:
+          containers:
+          - image: postgres:9.5.3
+            name: postgres
+            env:
+            - name: POSTGRES_PASSWORD
+              value: mysecretpassword
+            - name: POSTGRES_USER
+              value: articles
+            ports:
+            - containerPort: 5432
+              name: postgres
+
+The second section corresponds to the deployment it self. We start
+by adding the same metadata we used for the service and then the
+specifications. We then define our strategy as `RollingUpdate`. This means
+that old Pods won't be killed before new ones are created. Instead
+they will be replace in a rolling-update fashion. So you're going to have
+several copies of your pods running simultaneously.
+Then for the template, we have to specify the match we need for this
+replica set and pods. As I mentioned before, the service will be looking
+for two labels: `app` and `tier` and it must match this metadata.
+Finally we define the specifications for the containers. This is pretty
+similar to the Docker Compose file structure and it contains the image, the
+environmental variables, the port and the container name.
+
+### Setup Container
+
+In the case of the setup container, we don't need a replica set, service nor
+deployment. We only need a pod that gets the job done. Let's create a definition
+for that pod:
+
+    $ touch kube/development/setup-pod.yaml
+
+And add the following:
+
+    apiVersion: v1
+    kind: Pod
+    metadata:
+      name: articles-setup
+    spec:
+      restartPolicy: Never
+      containers:
+      - image: username/articles:v_0
+        name: articles
+        env:
+        - name: PASSENGER_APP_ENV
+          value: development
+        ports:
+        - containerPort: 80
+          name: articles
+        imagePullPolicy: Always
+        command: ["/bin/bash", "./setup.sh"]
+
+This pod has a very simple definition. It has a `restartPolicy` of never, so
+once it finishes it doesn't get restarted by the scheduler. The
+containers section contains the specs for our image that we just pushed
+to DockerHub (remember to change with yours). Similar to what we did with
+Docker Compose, we set the necessary environmental variables, we add
+an `imagePullPolicy`: so we can override tags we push to DockerHub, and finally
+a command instruction for running our custom entrypoint.
+
+### Web Application
+
+This deployment file is also going to have two kinds, a service and a deployment.
+
+
+    $ touch kube/development/articles-deployment.yaml
+
+And add the following template:
+
+
+    apiVersion: v1
+    kind: Service
+    metadata:
+      name: articles
+      labels:
+        app: articles
+    spec:
+      ports:
+        - port: 80
+      selector:
+        app: articles
+        tier: frontend
+      type: NodePort
+    ---
+    apiVersion: extensions/v1beta1
+    kind: Deployment
+    metadata:
+      name: articles
+      labels:
+        app: articles
+    spec:
+      strategy:
+        type: RollingUpdate
+      template:
+        metadata:
+          labels:
+            app: articles
+            tier: frontend
+        spec:
+          containers:
+          - image: username/articles:v_0
+            name: articles
+            env:
+            - name: PASSENGER_APP_ENV
+              value: development
+            ports:
+            - containerPort: 80
+              name: articles
+            imagePullPolicy: Always
+
+
+Let's go by section. First, the service definition is pretty similar to the one
+we have for the PostgreSQL. The difference here is we are using a difference set of
+selectors. The PostgreSQL uses a tier named `postgres`, and this one uses a tier named
+`frontend`. This way the service can route the requests to the correct replica set
+that has those same labels.
+Another difference is we are using a type for the service. For development we are
+using the type `NodePort` which is a way of exposing a port for accessing the application
+from outside the cluster. On production we'll use a `LoadBalancer` type, type that
+we don't have for our local cluster.
+
+Then we have the deployment section. This section contains the metadata with
+the respective name and label and the specification section. We are using a `RollingUpdate`
+strategy for the new deployments. Then we declare the labels so the service
+can locale the respective replica set.
+Finally we have the container specifications. We are using the image we pushed to
+DockerHub (replace with yours), passing the `PASSENGER_APP_ENV` variable
+for setting the Rails environment, exposing the port and adding an `imagePullPolicy`
+in order to always force the pull.
+
+Your final structure for the deployment files should be something like:
+
+    ├── kube
+    │   ├── development
+    │   │   ├── articles-deployment.yaml
+    │   │   ├── postgres-deployment.yaml
+    │   │   └── setup-pod.yaml
+    │   └── production
+
+Now it's time to try those templates on a local cluster. For that we are going
+to use a very useful tool called Minikube.
+
+## Minikube
+
+According to the [official Minikube repository](https://github.com/kubernetes/minikube):
+
+> Minikube is a tool that makes it easy to run Kubernetes locally.
+
+Before Minikube, running Kubernetes locally was pretty hard. You had some alternatives
+like running a cluster using Vagrant, but Minikube gives you a much better experience
+in my opinion. We'll use Minikube in order to test our Kubernetes configuration files
+without having to lunch test servers in the cloud.
+
+Now, don't confuse testing your cluster locally with local development. Minikube isn't
+yet a development tool, but a tool for testing your cluster configuration before
+shipping it to production. You still need to use Docker and Docker Compose or any
+other tool you use daily to work on your code.
+
+You can find all of the installation instructions in the [official repository](https://github.com/kubernetes/minikube).
+
+The version I have on my machine is 0.6.0 and I'll be using the `xhyve` driver.
+You can use whatever is best for your platform.
+You're also going to need the `kubectl` tool for launching the services and
+deployments. [Here](http://kubernetes.io/docs/user-guide/prereqs/) you can find the instructions for install `kubectl`.
+This is all the information I have for the version I have installed:
+
+    Client Version: version.Info{Major:"1", Minor:"4+", GitVersion:"v1.4.0-alpha.1", GitCommit:"897d2770950db06d4c6a51f10b4fcf6d389f9736", GitTreeState:"clean", BuildDate:"2016-07-11T20:14:46Z", GoVersion:"go1.6.2", Compiler:"gc", Platform:"darwin/amd64"}
+    Server Version: version.Info{Major:"1", Minor:"3", GitVersion:"v1.3.0", GitCommit:"283137936a498aed572ee22af6774b6fb6e9fd94", GitTreeState:"clean", BuildDate:"1970-01-01T00:00:00Z", GoVersion:"go1.6.1", Compiler:"gc", Platform:"linux/amd64"}
+
+Make sure you're using that version or a later one.
+
+Once you have Minikube and kubectl ready to go, you can create your local
+cluster by running:
+
+    $ minikube start
+
+That can take some time the first time. Once it finishes, you should and output
+similar to this:
+
+    Starting local Kubernetes cluster...
+    Kubernetes is available at https://192.168.99.100:8443.
+    Kubectl is now configured to use the cluster.
+
+Meaning you have a Kubernetes cluster running locally.
+Minikube gives a handful set of commands for interacting with the cluster.
+For example you can run:
+
+    $ minikube dashboard
+
+Which will open your default browser and display the Kubernetes graphical
+interface where you can all the workloads of the cluster. Right now we shouldn't
+have any workload running.
+
+Sadly, Kubernetes currently doesn't have a dependency mechanism like Docker Compose
+does. So we have create our resources in the correct order. Let's start with
+the PostgreSQL deployment. Run the following command from the root of the
+application:
+
+    $ kubectl create -f kube/development/postgres-deployment.yaml
+
+Output:
+
+    service "postgres" created
+    deployment "postgres" created
+
+We can describe our new deployment with:
+
+    $ kubectl describe deployment postgres
+
+Output:
+
+    Name:                   postgres
+    Namespace:              default
+    CreationTimestamp:      Sun, 24 Jul 2016 11:32:00 -0400
+    Labels:                 app=articles
+    Selector:               app=articles,tier=postgres
+    Replicas:               1 updated | 1 total | 0 available | 1 unavailable
+    StrategyType:           RollingUpdate
+    MinReadySeconds:        0
+    RollingUpdateStrategy:  1 max unavailable, 1 max surge
+    OldReplicaSets:         <none>
+    NewReplicaSet:          postgres-524157917 (1/1 replicas created)
+    Events:
+      FirstSeen     LastSeen        Count   From                            SubobjectPath       Type            Reason                  Message
+      ---------     --------        -----   ----                            -------------       --------        ------                  -------
+      33s           33s             1       {deployment-controller }           Normal           ScalingReplicaSet       Scaled up replica set postgres-524157917 to 1
+
+If you run `minikube dashboard` again, you should see the new workloads. This
+deployment generates a service, a replica set and a pod. For example, if you want
+to see the events for the pod, you can run:
+
+    $ kubectl describe pod postgres
+
+And you'll have a big output that describe the pod specifications and also
+the events in case something goes wrong.
+
+Now that we have our database running, let's launch our setup pod that's
+going to run the migrations for the applications:
+
+    $ kubectl create -f kube/development/setup-pod.yaml
+
+Output:
+
+    pod "articles-setup" created
+
+This can take some time the first since it has to pull the entire
+image from DockerHub.
+
+If you run:
+
+    $ kubectl describe pod articles-setup
+
+You can see the events at the end of the output:
+
+
+    Events:
+      FirstSeen     LastSeen        Count   From                    SubobjectPath                       Type            Reason          Message
+      ---------     --------        -----   ----                    -------------                       --------        ------          -------
+      3m            3m              1       {default-scheduler }               Normal           Scheduled       Successfully assigned articles-setup to minikubevm
+      3m            3m              1       {kubelet minikubevm}    spec.containers{articles}   Normal          Pulling         pulling image "pacuna/articles:v_0"
+
+And as you can see in my case it's still pulling the image. Wait for couple
+of minutes and rerun the command:
+
+    $ kubectl describe pod articles-setup
+
+Output:
+
+     FirstSeen     LastSeen        Count   From                    SubobjectPath                   Type            Reason          Message
+      ---------     --------        -----   ----                    -------------                   --------        ------          -------
+      8m            8m              1       {default-scheduler }                                    Normal          Scheduled       Successfully assigned articles-setup to minikubevm
+      8m            8m              1       {kubelet minikubevm}    spec.containers{articles}       Normal          Pulling         pulling image "pacuna/articles:v_0"
+      3m            3m              1       {kubelet minikubevm}    spec.containers{articles}       Normal          Pulled          Successfully pulled image "pacuna/articles:v_0"
+      3m            3m              1       {kubelet minikubevm}    spec.containers{articles}       Normal          Created         Created container with docker id aaef08a467bf
+      3m            3m              1       {kubelet minikubevm}    spec.containers{articles}       Normal          Started         Started container with docker id aaef08a467bf
+      3m            3m              1       {kubelet minikubevm}    spec.containers{articles}       Normal          Killing         Killing container with docker id aaef08a467bf: Need to kill pod.
+
+As you can see, the container was killed. Let's see if we can find something
+in the logs:
+
+    $ kubectl logs articles-setup articles
+
+Output:
+
+    Waiting PostgreSQL to start on 5432...
+    PostgreSQL started
+    == 20160723153218 CreateArticles: migrating ===================================
+    -- create_table(:articles)
+       -> 0.0085s
+    == 20160723153218 CreateArticles: migrated (0.0087s) ==========================
+
+Cool!, so the container ran the migrations and the it died, just what we wanted.
+In case you wonder, that log command receives the pod name and then the container name.
+That's why we use `articles-setup articles`. If you see the pod specification,
+you'll see that the container name we assigned was actually `articles`.
+
+Now, let's run the last piece, the web application:
+
+    $ kubectl create -f kube/development/articles-deployment.yaml
+
+Output:
+
+    You have exposed your service on an external port on all nodes in your
+    cluster.  If you want to expose this service to the external internet, you may
+    need to set up firewall rules for the service port(s) (tcp:30097) to serve traffic.
+
+    See http://releases.k8s.io/HEAD/docs/user-guide/services-firewalls.md for more details.
+    service "articles" created
+    deployment "articles" created
+
+Don't worry about that warning. That's would important only if we were
+using this service type on a production cluster.
+This should run much faster than the previous one since we already have the image
+on the cluster. Let's check that by running:
+
+    $ kubectl get pods
+
+Output:
+
+    NAME                        READY     STATUS    RESTARTS   AGE
+    articles-1992548935-5es1h   1/1       Running   0          3m
+    postgres-524157917-pxhj0    1/1       Running   0          22m
+
+Now grab that pod name for your articles containers (it will be different than mine)
+and check the logs:
+
+    $ kubectl logs articles-1992548935-5es1h
+
+Output:
+
+    *** Running /etc/my_init.d/00_regen_ssh_host_keys.sh...
+    *** Running /etc/my_init.d/30_presetup_nginx.sh...
+    *** Running /etc/rc.local...
+    *** Booting runit daemon...
+    *** Runit started as PID 8
+    Jul 24 15:51:10 articles-1992548935-5es1h syslog-ng[16]: syslog-ng starting up; version='3.5.6'
+    ok: run: /etc/service/nginx-log-forwarder: (pid 27) 0s
+    [ 2016-07-24 15:51:11.2773 28/7fd1cc210780 age/Wat/WatchdogMain.cpp:1291 ]: Starting Passenger watchdog...
+    [ 2016-07-24 15:51:11.3093 31/7fa1a64ca780 age/Cor/CoreMain.cpp:982 ]: Starting Passenger core...
+    [ 2016-07-24 15:51:11.3095 31/7fa1a64ca780 age/Cor/CoreMain.cpp:235 ]: Passenger core running in multi-application mode.
+    [ 2016-07-24 15:51:11.3174 31/7fa1a64ca780 age/Cor/CoreMain.cpp:732 ]: Passenger core online, PID 31
+    [ 2016-07-24 15:51:11.3415 36/7f6e30d73780 age/Ust/UstRouterMain.cpp:529 ]: Starting Passenger UstRouter...
+    [ 2016-07-24 15:51:11.3452 36/7f6e30d73780 age/Ust/UstRouterMain.cpp:342 ]: Passenger UstRouter online, PID 36
+
+So it seems the passenger process started with no errors.
+
+If we want to see our application in action, there's a very nice
+Minikube command that will takes us to our service.
+Run:
+
+    $ minikube service articles
+
+And that should take you to the cluster's IP address and the port that
+was assigned to our service. There's where our application lives.
+Let's find our service address and make a post request to our
+articles endpoint. First we need our Minikube VM IP:
+
+    $ minikube ip
+
+Output:
+
+    192.168.99.100
+
+And now the port the cluster assigned to our service:
+
+
+    $ kubectl describe service articles
+
+Output:
+
+    Name:                   articles
+    Namespace:              default
+    Labels:                 app=articles
+    Selector:               app=articles,tier=frontend
+    Type:                   NodePort
+    IP:                     10.0.0.111
+    Port:                   <unset> 80/TCP
+    NodePort:               <unset> 30097/TCP
+    Endpoints:              172.17.0.4:80
+    Session Affinity:       None
+    No events.
+
+So in my case I know that our service should be located at `http://192.168.99.100:30097`.
+In your case you have to find your NodePort in the service description in order
+to find the exposed port.
+Let's make a curl POST request to the endpoint:
+
+    $ curl -H "Content-Type: application/json" -X POST -d '{"title":"my first article","body":"Lorem ipsum dolor sit amet, consectetur adipiscing elit..."}' http://192.168.99.100:30097/articles
+
+Output:
+
+    {"id":1,"title":"my first article","body":"Lorem ipsum dolor sit amet, consectetur adipiscing elit...","created_at":"2016-07-24T16:03:35.179Z","updated_at":"2016-07-24T16:03:35.179Z"}%
+
+Great! We have our application fully running in our local Kubernetes cluster.
+The transition to a production cluster will not be hard at all. We just need
+to configure two more elements in our architecture, the Load Balancers and
+the Volume for persisting the data. There are also some changes we need to make to our
+application for running on production. We'll need a secret token for that environment
+and also configure our database.
+
+## Setting up AWS CLI
+
+In order to allow Kubernetes to run nodes for us in our AWS account, we need to
+first configure this CLI tool with our credentials.
+For that you open the AWS Console interface and go to the Security Credentials
+section. There you can generate and download a new access key. Make sure
+you put these in a safe place. You can get more info on how to get this credentials
+by visiting at http://docs.aws.amazon.com/cli/latest/userguide/cli-chap-getting-set-up.html
+
+Now we can install the `awscli` tool by running (you need to have python and pip installed):
+
+    $ pip install awscli
+
+For creating a new configuration, run:
+
+    $ aws configure
+
+That command will ask you for the recently created credentials, for a default
+region (I use us-west-2) and for a preferred output format (JSON of course).
+
+## Switching the Kubernetes context
+
+You can setup different context for interacting with different clusters. Right
+now if we run:
+
+    $ kubectl config current-context
+
+We get:
+
+    minikube
+
+That's because when we installed Minikube, an specific context was created
+so we could interact with our local cluster by using kubectl.
+Let's create a new context so now we can create a production cluster in AWS:
+
+    $ kubectl config set-context aws
+    $ kubectl config use-context aws
+
+Now if you run `kubectl config current-context` you should get `aws` instead
+Minikube.
+
+The [getting started guide for AWS](http://kubernetes.io/docs/getting-started-guides/aws/)
+indicates that we can run a simple command for launching a cluster with some
+default settings. You have to keep in mind that these resources are not in the
+free-tier, so you may want to delete the entire cluster once you don't need it
+anymore. That way you only are going to pay depending on the amount of hours
+your instances were up.
+The documentation indicates that:
+
+> By default, the script will provision a new VPC and a 4 node k8s cluster in us-west-2a (Oregon) with EC2 instances running on Debian.
+
+And then mentions that you can override this configuration by setting the following
+environmental variables in your system:
+
+    KUBE_AWS_ZONE
+    NUM_NODES
+    MASTER_SIZE
+    NODE_SIZE
+    AWS_S3_REGION
+    AWS_S3_BUCKET
+    INSTANCE_PREFIX
+
+In our case four nodes can be a little too much just for this simple API
+and the Database. Let's just use two small instances. In our profile file (.bashrc or .zshrc)
+let's add the following:
+
+    export NUM_NODES=2
+    export NODE_SIZE=t2.small
+
+And now source that file with (in my case):
+
+    $ source ~/.zshrc
+
+Now we can run the Kubernetes script that will launch a cluster
+in our account:
+
+
+    $ export KUBERNETES_PROVIDER=aws; curl -sS https://get.k8s.io | bash
+
+That can take a while. The script will download Kubernetes (which is kind of heavy)
+and then it'll launch the nodes and all the necessary elements for the cluster. It's
+going to create Security Groups, a VPC, an S3 Bucket, the EC2 instances between
+other stuff.
+
+When it finally finishes, at the end of the output you should see something like
+this:
+
+    Kubernetes master is running at https://52.41.37.108
+    Elasticsearch is running at https://52.41.37.108/api/v1/proxy/namespaces/kube-system/services/elasticsearch-logging
+    Heapster is running at https://52.41.37.108/api/v1/proxy/namespaces/kube-system/services/heapster
+    Kibana is running at https://52.41.37.108/api/v1/proxy/namespaces/kube-system/services/kibana-logging
+    KubeDNS is running at https://52.41.37.108/api/v1/proxy/namespaces/kube-system/services/kube-dns
+    kubernetes-dashboard is running at https://52.41.37.108/api/v1/proxy/namespaces/kube-system/services/kubernetes-dashboard
+    Grafana is running at https://52.41.37.108/api/v1/proxy/namespaces/kube-system/services/monitoring-grafana
+    InfluxDB is running at https://52.41.37.108/api/v1/proxy/namespaces/kube-system/services/monitoring-influxdb
+
+    To further debug and diagnose cluster problems, use 'kubectl cluster-info dump'.
+
+    Kubernetes binaries at /Users/pacuna/Books/rails-on-kubernetes/articles/kubernetes/cluster/
+    You may want to add this directory to your PATH in $HOME/.profile
+
+There you can see all the difference services that Kubernetes installed in our
+cluster along with your base IP. It also has added the configuration credentials
+for this cluster in the ~/.kube/config file. There you should find a segment similar
+to this:
+
+
+      name: aws_kubernetes-basic-auth
+      user:
+        password: xxxxxxxxxxxxxxxx
+        username: admin
+
+Visit your the Kubernetes master IP address and use those credentials for login into
+the cluster. Once you're logged in, you'll first see a list of endpoints you can
+access from there. The dashboard is under the `/ui` namespace. So in my case
+I can visit `https://52.41.37.108/ui` and that'll take me to my production
+cluster dashboard. Now we just need to prepare our templates for production.
+
+## Testing production settings with Minikube
+
+As I mentioned before, we have to make some changes to our application before
+shipping it to a production environment. We'll make these changes and then we'll try
+to deploy it with Minikube to see if it works. We still won't add persistence storage. We just
+want to check if the Rails production environment works correctly.
+
+First, we need to add a secret toke for production environment. In the root
+of your application run:
+
+    `rake secret`
+
+And copy that token to the `config/secrets.yml` file under the production section.
+
+Now open the `config/database.yml` file and add the following values under the
+production section:
+
+    production:
+      <<: *default
+      host: postgres
+      database: articles
+      username: articles
+      password: mysecretpassword
+
+And that's it. Now let's test this configuration with Minikube.
+First let's switch the kubectl context:
+
+    $ kubectl config use-context minikube
+
+Output:
+
+    switched to context "minikube".
+
+If you haven't deleted the deployments you should be able to see them with the command:
+
+    $ kubectl get deployments
+
+Output:
+
+    NAME       DESIRED   CURRENT   UP-TO-DATE   AVAILABLE   AGE
+    articles   1         1         1            1           5h
+    postgres   1         1         1            1           5h
+
+We are going to update the web application image so it can pick our latests
+changes. After that, we have to push to DockerHub and update our deployment file
+and setup pod file.
+
+First, let's build our new version and push it DockerHub:
+
+    $ docker build -t username/articles:v_1 .
+    $ docker push username/articles:v_1
+
+Now we can update our deployment files. We only need to update
+the web application and the setup container since we are using the same database
+in the PostgreSQL container.
+
+We are going to drop the current development deployments and generate new ones
+for the production environment.
+For that, first let's copy all of our development templates
+to the production folder:
+
+    $ cp kube/development/* kube/production
+
+Now open the setup-pod.yaml and replace the container version and also the
+passenger environmental variable that defines the Rails environment:
+
+
+    apiVersion: v1
+    kind: Pod
+    metadata:
+      name: articles-setup
+    spec:
+      restartPolicy: Never
+      containers:
+      - image: pacuna/articles:v_1
+        name: articles
+        env:
+        - name: PASSENGER_APP_ENV
+          value: production
+        ports:
+        - containerPort: 80
+          name: articles
+        imagePullPolicy: Always
+        command: ["/bin/bash", "./setup.sh"]
+
+Now, let's do the same thing with the articles-deployment.yaml file:
+
+    apiVersion: v1
+    kind: Service
+    metadata:
+      name: articles
+      labels:
+        app: articles
+    spec:
+      ports:
+        - port: 80
+      selector:
+        app: articles
+        tier: frontend
+      type: NodePort
+    ---
+    apiVersion: extensions/v1beta1
+    kind: Deployment
+    metadata:
+      name: articles
+      labels:
+        app: articles
+    spec:
+      strategy:
+        type: RollingUpdate
+      template:
+        metadata:
+          labels:
+            app: articles
+            tier: frontend
+        spec:
+          containers:
+          - image: pacuna/articles:v_1
+            name: articles
+            env:
+            - name: PASSENGER_APP_ENV
+              value: production
+            ports:
+            - containerPort: 80
+              name: articles
+            imagePullPolicy: Always
+
+There you can see the only thing we changed was the `PASSENGER_APP_ENV` variable
+and the image version.
+Let's remove the current deployments and container setup:
+
+    $ kubectl delete -f kube/development/articles-deployment.yaml
+    $ kubectl delete -f kube/development/postgres-deployment.yaml
+    $ kubectl delete -f kube/development/setup-pod.yaml
+
+Just a quick check to see if there are still pods running on the cluster:
+
+    $ kubectl get pods
+
+We get no output, so the cluster is empty. Let's run our
+production templates:
+
+    $ kubectl create -f kube/production/postgres-deployment.yaml
+
+For the database,
+
+    $ kubectl create -f kube/production/setup-pod.yaml
+
+For the setup. Wait for a little bit so the setup finishes.
+Run the logs command to see if it's ready:
+
+    $ kubectl logs articles-setup articles
+
+Output should be:
+
+    Waiting PostgreSQL to start on 5432...
+    PostgreSQL started
+    == 20160723153218 CreateArticles: migrating ===================================
+    -- create_table(:articles)
+       -> 0.0064s
+    == 20160723153218 CreateArticles: migrated (0.0066s) ==========================
+
+Now the migrations are ready, let's run our application:
+
+    $ kubectl create -f kube/production/articles-deployment.yaml
+
+Let's open the service by using Minikube:
+
+    $ minikube service articles
+
+You probably will see a blank page. Remember that on production Rails
+doesn't show the welcome page. Let's try to add an article. This time
+the assigned port is 32231. Remember you can get yours by running:
+
+    $ kubectl describe service articles
+
+Output:
+
+    Name:                   articles
+    Namespace:              default
+    Labels:                 app=articles
+    Selector:               app=articles,tier=frontend
+    Type:                   NodePort
+    IP:                     10.0.0.204
+    Port:                   <unset> 80/TCP
+    NodePort:               <unset> 32231/TCP
+    Endpoints:              172.17.0.4:80
+    Session Affinity:       None
+    No events.
+
+And you Minikube IP with `minikube ip`.
+
+    curl -H "Content-Type: application/json" -X POST -d '{"title":"my first article","body":"Lorem ipsum dolor sit amet, consectetur adipiscing elit..."}' http://192.168.99.100:32231/articles
+
+Output:
+
+    {"id":1,"title":"my first article","body":"Lorem ipsum dolor sit amet, consectetur adipiscing elit...","created_at":"2016-07-24T21:35:18.497Z","updated_at":"2016-07-24T21:35:18.497Z"}%
+
+Great! So our production setup is ready for our real production cluster. Testing
+your configuration files locally can be a really good practice and it can help you to find
+error quickly, since you won't be running commands remotely.
+
+## Running the templates on production
+
+So, it's time to try our templates on our production cluster. Let's first
+switch to the context the AWS script created for us:
+
+    $ kubectl config use-context aws_kubernetes
+
+Let's run a basic command to see if we're really connected to the cluster:
+
+    $ kubectl get services
+
+Output:
+
+    NAME         CLUSTER-IP   EXTERNAL-IP   PORT(S)   AGE
+    kubernetes   10.0.0.1     <none>        443/TCP   1h
+
+You can see that we only have the Kubernetes service running. Let add ours:
+
+    $ kubectl create -f kube/production/postgres-deployment.yaml
+
+Output:
+
+    service "postgres" created
+    deployment "postgres" created
+
+Now the setup:
+
+    $ kubectl create -f kube/production/setup-pod.yaml
+
+Check the logs after a few minutes to see if it's finished:
+
+    $ kubectl logs articles-setup articles
+
+Output:
+
+    Waiting PostgreSQL to start on 5432...
+    PostgreSQL started
+    == 20160723153218 CreateArticles: migrating ===================================
+    -- create_table(:articles)
+       -> 0.0122s
+    == 20160723153218 CreateArticles: migrated (0.0123s) ==========================
+
+And finally for the web application we want to make an small change. Until now
+we have been using a `NodePort` type for the service. Well, now that we are on
+production, we can use a LoadBalancer, so we can have an static endpoint for that
+service. Open the kube/production/articles-deployment.yaml file and change
+the service type to `LoadBalancer`:
+
+    apiVersion: v1
+    kind: Service
+    metadata:
+      name: articles
+      labels:
+        app: articles
+    spec:
+      ports:
+        - port: 80
+      selector:
+        app: articles
+        tier: frontend
+      type: LoadBalancer
+
+And leave the rest of the file the way it is.
+
+Now create the deployment:
+
+    $ kubectl create -f kube/production/articles-deployment.yaml
+
+If we inspect the service with:
+
+    $ kubectl describe service articles
+
+We'll see:
+
+    Name:                   articles
+    Namespace:              default
+    Labels:                 app=articles
+    Selector:               app=articles,tier=frontend
+    Type:                   LoadBalancer
+    IP:                     10.0.0.107
+    LoadBalancer Ingress:   a8d834d4951e811e6a57306e4b278ad1-1983639296.us-west-2.elb.amazonaws.com
+    Port:                   <unset> 80/TCP
+    NodePort:               <unset> 31810/TCP
+    Endpoints:              10.244.1.6:80
+    Session Affinity:       None
+    Events:
+      FirstSeen     LastSeen        Count   From                    SubobjectPath       Type            Reason                  Message
+      ---------     --------        -----   ----                    -------------       --------        ------                  -------
+      1m            1m              1       {service-controller }              Normal           CreatingLoadBalancer    Creating load balancer
+      1m            1m              1       {service-controller }              Normal           CreatedLoadBalancer     Created load balancer
+
+
+So as you can see, Kubernetes created an AWS Load Balancer for us and its associated
+to this service. The endpoint is in the `LoadBalancer Ingress` field and my case
+corresponds to `a8d834d4951e811e6a57306e4b278ad1-1983639296.us-west-2.elb.amazonaws.com`.
+You'll have to wait for a few seconds for that endpoint to be live.
+Once it's ready you can our post command using cURL:
+
+    $ curl -H "Content-Type: application/json" -X POST -d '{"title":"my first article","body":"Lorem ipsum dolor sit amet, consectetur adipiscing elit..."}' http://a8d834d4951e811e6a57306e4b278ad1-1983639296.us-west-2.elb.amazonaws.com/articles
+
+Output:
+
+    {"id":1,"title":"my first article","body":"Lorem ipsum dolor sit amet, consectetur adipiscing elit...","created_at":"2016-07-24T21:56:47.998Z","updated_at":"2016-07-24T21:56:47.998Z"}%
+
+So we have successfully our Rails API in a Kubernetes cluster. Now
+we are going to dig into more advanced topics such as Volumes for persisting data,
+healthy check endpoints and running deployment updates to our application.
+
+## Adding persistence
+
+A very useful integration between Kubernetes and AWS is that you can
+mount AWS Volumes in a very transparent way. We only need to create
+a volume through the AWS API and then add a new section in the deployment
+file for the service you want to persist. In our case we only need persistence
+for the PostgreSQL container. That way, if the container gets killed, the data
+will remain in the AWS Volume.
+Let's start by creating the volume. We can do this with a very simple command
+from the AWS CLI. The only detail here is that you need use the same region
+your cluster lives in. If you didn't change the default one, then the region will be
+`us-west-2` and you can use something like `us-west-2a` for the availability zone.
+
+    $ aws ec2 create-volume --availability-zone us-west-2a --size 10 --volume-type gp2
+
+Output:
+
+    {
+        "AvailabilityZone": "us-west-2a",
+        "Encrypted": false,
+        "VolumeType": "gp2",
+        "VolumeId": "vol-24e48391",
+        "State": "creating",
+        "Iops": 100,
+        "SnapshotId": "",
+        "CreateTime": "2016-07-25T00:25:42.871Z",
+        "Size": 10
+    }
+
+The output gives us the VolumeId we're going to need later for our template so
+don't lose it.
+
+Now, let's open the deployment file for the PostgreSQL service and change the
+container specification so it looks like this:
+
+    spec:
+      containers:
+      - image: postgres:9.5.3
+        name: postgres
+        env:
+        - name: POSTGRES_PASSWORD
+          value: mysecretpassword
+        - name: POSTGRES_USER
+          value: articles
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+        ports:
+        - containerPort: 5432
+          name: postgres
+        volumeMounts:
+          - name: postgres-persistent-storage
+            mountPath: /var/lib/postgresql/data
+      volumes:
+        - name: postgres-persistent-storage
+          awsElasticBlockStore:
+            volumeID: vol-24e48391
+            fsType: ext4
+
+Replace the volumeID property with yours. In order to use the AWS Volume,
+we have to declare a new PGDATA for the database, declare a volume and also
+mount that volume using the `volumeMounts` property. Then, by only using
+its VolumeId, we can access the volume and save our data.
+Let's delete our current deployment and create a new one for our database:
+
+
+    $ kubectl delete -f kube/production/postgres-deployment.yaml
+
+And let's run it again with the new changes:
+
+    $ kubectl create -f kube/production/postgres-deployment.yaml
+
+Output:
+
+    service "postgres" created
+    deployment "postgres" created
+
+We can describe the postgres replica set to see if it is in fact using the
+volume:
+
+    $ kubectl describe rs postgres
+
+Output:
+
+
+    Name:           postgres-16042964
+    Namespace:      default
+    Image(s):       postgres:9.5.3
+    Selector:       app=articles,pod-template-hash=16042964,tier=postgres
+    Labels:         app=articles
+                    pod-template-hash=16042964
+                    tier=postgres
+    Replicas:       1 current / 1 desired
+    Pods Status:    1 Running / 0 Waiting / 0 Succeeded / 0 Failed
+    Volumes:
+      postgres-persistent-storage:
+        Type:       AWSElasticBlockStore (a Persistent Disk resource in AWS)
+        VolumeID:   vol-24e48391
+        FSType:     ext4
+        Partition:  0
+        ReadOnly:   false
+    Events:
+      FirstSeen     LastSeen        Count   From                            SubobjectPath   Type            Reason                  Message
+      ---------     --------        -----   ----                            -------------   --------        ------                  -------
+      50s           50s             1       {replicaset-controller }                        Normal          SuccessfulCreate        Created pod: postgres-16042964-ylnhu
+
+You can see there the Volume section showing that the volume is correctly
+mounted into the container.
+
+We can also query the AWS API to see if can gives us some information of which instance
+is this volume attached to it:
+
+    $ aws ec2 describe-volumes --volume-ids vol-24e48391
+
+Output:
+
+    {
+        "Volumes": [
+            {
+                "AvailabilityZone": "us-west-2a",
+                "Attachments": [
+                    {
+                        "AttachTime": "2016-07-25T00:34:51.000Z",
+                        "InstanceId": "i-e3a26477",
+                        "VolumeId": "vol-24e48391",
+                        "State": "attached",
+                        "DeleteOnTermination": false,
+                        "Device": "/dev/xvdba"
+                    }
+                ],
+                "Encrypted": false,
+                "VolumeType": "gp2",
+                "VolumeId": "vol-24e48391",
+                "State": "in-use",
+                "Iops": 100,
+                "SnapshotId": "",
+                "CreateTime": "2016-07-25T00:25:42.871Z",
+                "Size": 10
+            }
+        ]
+    }
+
+There you can see the this volume is in fact attached to an instance. That's
+the instance that's holding the PostgreSQL container right now.
+
+If we want to do our smoke test one more time to see if the database is working correctly, we
+first have to rerun our setup container. Remember that this container migrates
+the database and right now we are starting with a fresh PostgreSQL container that
+from now on will be able to persist its data.
+
+    $ kubectl delete -f kube/production/setup-pod.yaml
+    $ kubectl create -f kube/production/setup-pod.yaml
+
+As always let's check the logs:
+
+    $ kubectl logs articles-setup articles
+
+Output:
+
+    Waiting PostgreSQL to start on 5432...
+    PostgreSQL started
+    == 20160723153218 CreateArticles: migrating ===================================
+    -- create_table(:articles)
+       -> 0.0073s
+    == 20160723153218 CreateArticles: migrated (0.0074s) ==========================
+
+We are good to go. Let's do that test:
+
+    $ curl -H "Content-Type: application/json" -X POST -d '{"title":"my first article","body":"Lorem ipsum dolor sit amet, consectetur adipiscing elit..."}' http://a8d834d4951e811e6a57306e4b278ad1-1983639296.us-west-2.elb.amazonaws.com/articles
+
+Output:
+
+    {"id":1,"title":"my first article","body":"Lorem ipsum dolor sit amet, consectetur adipiscing elit...","created_at":"2016-07-25T00:47:33.462Z","updated_at":"2016-07-25T00:47:33.462Z"}%
+
+Great! It's working. But, how can we know that we are actually persisting the data?
+Well, there's only one way to know. Let's delete our PostgreSQL deployment and run it
+again one more time. This time we should not even need to run the setup, because
+the tables are already there. Also we have one article there, so let's hope it's
+still there after a new deployment:
+
+    $ kubectl delete -f kube/production/postgres-deployment.yaml
+
+Output:
+
+    service "postgres" deleted
+    deployment "postgres" deleted
+
+Now let's recreate it:
+
+    $ kubectl create -f kube/production/postgres-deployment.yaml
+
+Output:
+
+    service "postgres" created
+    deployment "postgres" created
+
+Let's check if we have a valid response and our first article back:
+
+    $ curl http://a8d834d4951e811e6a57306e4b278ad1-1983639296.us-west-2.elb.amazonaws.com/articles
+
+Output:
+
+    [{"id":1,"title":"my first article","body":"Lorem ipsum dolor sit amet, consectetur adipiscing elit...","created_at":"2016-07-25T00:47:33.462Z","updated_at":"2016-07-25T00:47:33.462Z"}]%
+
+Awesome. This means we can kill the PostgreSQL anytime we want and the data
+won't be lost. You can apply this trick for persisting any type of data, for example
+from a search engine like Elasticsearch or another database like MySQL or MongoDB.
+
+## Updating the application
+
+One of the cool features of deployments in Kubernetes, is that you can
+run updates very easily on your application. We only need to create the new version
+of the image we want to deploy and update our deployment template. Then with just
+one command we will have a new version up. Let's try that now. We are going to
+add a new field to our articles table. This would require apply migrations, so we also
+going to have run our setup container before the update. Don't worry, once we
+start to use jenkins for our deployments, everything will be automatic. But for now
+let just stay with the kubectl commands.
+
+Let's add the new field in our Rails application:
+
+    rails g migration AddSlugToArticles slug:string
+
+Let's also generate this slug automatically before the record
+gets saved in the articles#create action:
+
+      def create
+        @article = Article.new(article_params)
+        @article.slug = @article.title.parameterize
+
+        if @article.save
+          render json: @article, status: :created, location: @article
+        else
+          render json: @article.errors, status: :unprocessable_entity
+        end
+      end
+
+
+OK, I'm pretty sure that's going to work. Let's rebuild the image and push it
+to DockerHub.
+
+    $ docker build -t username/articles:v_2 .
+    $ docker push username/articles:v_2
+
+Update the image version in both the setup-pod template and the
+articles-deployment template:
+
+    image: username/articles:v_2
+
+Now, let's rerun our setup container so the migrations are applied:
+
+    $ kubectl delete -f kube/production/setup-pod.yaml
+    $ kubectl create -f kube/production/setup-pod.yaml
+
+Check the logs:
+
+    $ kubectl logs articles-setup articles
+
+Output:
+
+    Waiting PostgreSQL to start on 5432...
+    PostgreSQL started
+    == 20160725010251 AddSlugToArticles: migrating ================================
+    -- add_column(:articles, :slug, :string)
+       -> 0.0048s
+    == 20160725010251 AddSlugToArticles: migrated (0.0050s) =======================
+
+And now for update our deployment we can run:
+
+    $ kubectl apply -f kube/production/articles-deployment.yaml
+
+Output:
+
+    service "articles" configured
+    deployment "articles" configured
+
+Wait for a second for the deployment to get updated and let's try to create a new
+article:
+
+    $ curl -H "Content-Type: application/json" -X POST -d '{"title":"my second article","body":"Lorem ipsum dolor sit amet, consectetur adipiscing elit..."}' http://a8d834d4951e811e6a57306e4b278ad1-1983639296.us-west-2.elb.amazonaws.com/articles
+
+Output:
+
+    {"id":2,"title":"my second article","body":"Lorem ipsum dolor sit amet, consectetur adipiscing elit...","created_at":"2016-07-25T01:35:40.113Z","updated_at":"2016-07-25T01:35:40.113Z","slug":"my-second-article"}%
+
+The slug was generated correctly. We just made our first real deployment to our
+application.
