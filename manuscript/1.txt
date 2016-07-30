@@ -1739,45 +1739,50 @@ application. In the next section we'll see how to automate this entire process
 with a single operation. For that we'll need to install Jenkins with a couple
 of plugins.
 
-# CI
+# Continuous Integration (CI)
 
-In this chapter I'll show how can you automatize the entire deployment process
-using Jenkins. Our final goal will be to update our application running in the
-cluster with every push to GitHub. The series of steps for this to happen
+In this chapter I'll show how you can automate the entire deployment process
+using Jenkins. Our final goal is to be able to update our application running in the
+cluster by pushing to some Git branch. The series of steps for this to happen
 should be:
 
-- You push changes to your application to a certain production branch on GitHub
-- A hook tells the Jenkins server that a new version is available
+- A change is pushed to your the application repository on GitHub
+- A service hook tells Jenkins a new version is available
 - Jenkins pulls the latests changes from GitHub
-- Jenkins builds a new Docker image with the new version
+- Jenkins builds a new Docker image with this new version
 - Jenkins pushes that image to your DockerHub account
 - Jenkins updates the deployment files with this new image version
 - Jenkins applies the changes by making calls to the cluster's API
 
 Those steps are basically what we have been doing manually until now, so it shouldn't
-be so hard to automatize these tasks. Although a big difference is that we have
-our system completely configured to interact with all those difference services. So
+be so hard to automate them. Although, a big difference is that we have
+a system completely configured to interact with all those difference services. So
 the main difficulty with this pipeline will be to configure the Jenkins server
-so it can connect to all our different service accounts with no issues.
+so it can connect to all the different service accounts with no issues.
 
 Let's start by installing Jenkins on a new machine.
 
 ## Installing Jenkins
 
+For Jenkins, we are going to run a new AWS EC2 instance. We'll be using the
+AWS CLI for creating all the different resources we need.
+
 ### Creating a Key Pair
 
-We'll need a new Key Pair for accessing the server. We can create and save one
+First let's create a new Key Pair for accessing the server. We can create and save one
 by running:
 
     $ aws ec2 create-key-pair --key-name Jenkins --query 'KeyMaterial' --output text > Jenkins.pem
 
-Then add the permissions for that pem:
+Then we need to add the permissions for that pem:
 
     $ chmod 400 Jenkins.pem
 
+Save this key in a safe folder. I like to use `~/.ssh/keys` for saving all my key pairs.
+
 ### Creating a Security Group
 
-Another requirement for launching an instance is to pass the name of a security
+Another required argument for launching an instance is the name of a security
 group with a set of rules. Let's create one now:
 
     $ aws ec2 create-security-group --group-name jenkins-sg --description "Jenkins Security Group"
@@ -1788,9 +1793,8 @@ Output:
         "GroupId": "sg-XXXXXXXX"
     }
 
-Now let's add some rules for this security group. We need one for ssh access by using
-our Key Pair, and a rule for http access. Let's use 8080 for the latter:
-
+Now let's add some rules for this security group. We need one for SSH access by using
+our Key Pair, and a rule for HTTP access. Let's use 8080 for the latter:
 
     $ aws ec2 authorize-security-group-ingress --group-id sg-XXXXXXXX --protocol tcp --port 22 --cidr 0.0.0.0/0
     $ aws ec2 authorize-security-group-ingress --group-id sg-XXXXXXXX --protocol tcp --port 8080 --cidr 0.0.0.0/0
@@ -1800,9 +1804,10 @@ way you have more protection by only allowing people from your network to connec
 
 ### Launching the instance
 
-You can use whatever image you prefer. I'll go with the `Amazon Linux AMI 2016.03.3 (HVM)`
-which id is `ami-7172b611`. Let's use the following command for launching an image
-with some good specs for a small Jenkins server:
+You can use whatever image you prefer, but keep in mind the Jenkins installation and
+general configuration may be different. I'll go with the `Amazon Linux AMI 2016.03.3 (HVM)`
+which ID is `ami-7172b611`. Let's use the following command for launching an instance
+with decent specs for a small Jenkins server:
 
     $ aws ec2 run-instances --image-id ami-7172b611 --count 1 --instance-type t2.medium --key-name Jenkins --security-group-ids sg-XXXXXXXX --block-device-mappings '[{ "DeviceName": "/dev/xvda", "Ebs": { "VolumeSize": 20 } }]'
 
@@ -1841,21 +1846,22 @@ You'll have a big output showing you all the date for that new instance:
                 ],
                 (truncated)
 
-Now wait for a few minutes so the instance is ready. If you want you can
+Now wait for a few minutes so the instance is ready. If you want, you can
 visit the AWS Console in order to check the instance status (or you can query
 the API if you prefer to).
 
 ### Connecting to the instance
 
 First we'll need the Public DNS of this new server. Go to the AWS Console or run
-`aws ec2 describe-instances` to get it. Now run
+`aws ec2 describe-instances` to get it. Now connect to that hostname using `ec2-user`
+as the user, and passing the Jenkins PEM created previously:
 
     $ ssh ec2-user@your-public-hostname.compute.amazonaws.com -i ~/.ssh/keys/Jenkins.pem
 
 Make sure you replace the Hostname and with yours and that the Keys path
-points to the folder where you saved the Keys created previously.
+points to the folder where you saved the Jenkins keys.
 
-You should see:
+You should see the welcome message:
 
     Are you sure you want to continue connecting (yes/no)? yes
     Warning: Permanently added 'ec2-52-42-195-25.us-west-2.compute.amazonaws.com,52.42.195.25' (ECDSA) to the list of known hosts.
@@ -1870,10 +1876,9 @@ You should see:
 
 We are in. Let's install Jenkins and some other stuff we need.
 
-### Installing Jenkins and extras
+### Installing dependencies
 
 Now that we are inside of our server, let's install some tools we'll need:
-
 
     # sudo su
     # yum update -y
@@ -1889,7 +1894,8 @@ Before start the services let's add the Jenkins user to the Docker group:
 
     # usermod -a -G docker jenkins
 
-No we can start the Jenkins and Docker services and add them to the system startup:
+Now we can start the Jenkins and Docker services and add them to the system startup and
+run some commands so we can login as the Jenkins user in case we need to:
 
     # service jenkins start
     # service docker start
@@ -1901,7 +1907,6 @@ No we can start the Jenkins and Docker services and add them to the system start
 The last dependency we need is `kubectl`. Without `kubectl` we can't talk
 to our cluster from jenkins. Let's pull the Kubernetes binaries, and configure
 `kubectl` so it can run commands in our cluster:
-
 
     # wget https://github.com/kubernetes/kubernetes/releases/download/v1.3.3/kubernetes.tar.gz
     # tar -xf kubernetes.tar.gz
@@ -1928,30 +1933,30 @@ plugins:
 
 Select each one of those and click on `Install without restart`.
 
-### Configuring the Job
+## Configuring the Job
 
 Right now we have our Docker Image, but we'll also need a GitHub repository so
-we can trigger a build after every deploy. So go to GitHub and create a new
-repository and call it `articles`
+we can trigger a build after every deploy. Go to GitHub and create a new
+repository and call it `articles`.
 
 Go to the Jenkins home and click on `create new jobs`. Use the name `Articles`
 and select `Freestyle project`, then click `OK`.
 
-In the `General` section, check GitHub project and add the url of your
+In the `General` section, check GitHub project and add the URL of your
 repository. For example I'll use `https://github.com/pacuna/articles`.
 
 In the `Source Code Management` section select `Git` and once again
 use your repository URL. Click in the Add button in the credentials section to open
 the Jenkins credentials provider, use the `Username with password` kind, and
-add your Username and Password for GitHub. Make sure after selecting those
-credentials, that Jenkins doesn't throw any errors in the fields. That's all
+add your Username and Password for GitHub. Make sure to select those
+credentials after, and that Jenkins doesn't throw any field errors. That's all
 for that section.
 
 In the `Build Triggers` section, check on `Build when a change is pushed to GitHub`.
 
-In the `Build` section add a `Docker Build and Publish` step. Here use your
-DockerHub repository name, for example `pacuna/articles`, in the tag field
-write `version_$BUILD_NUMBER` that way we can tag our versions using the number
+In the `Build` section add a `Docker Build and Publish` step. Here, use your
+DockerHub repository name, for example `pacuna/articles`. In the tag field
+write `version_$BUILD_NUMBER`. That way we can tag our versions using the number
 of this build (that's a Jenkins environmental variable). Finally
 click on the `Add` button for `Registry Credentials` and create a set of
 credentials with your Username and Password for DockerHub and then select
@@ -1965,28 +1970,28 @@ make sure all the credentials are working correctly. Go to the `Articles` projec
 and on the side menu click on `Build Now`.
 You should see the Job running. If you click on the Job and go to `Console Output`
 you'll see all the plugins in actions pulling the project from GitHub, creating the
-image and then pushing it to DockerHub. We are closer to our deployment pipeline.
+image and then pushing it to DockerHub.
 
-### Configuring Jenkins for accessing the cluster
+## Configuring Jenkins for accessing the cluster
 
-We have `Kubectl` installed but we haven't configured our cluster yet. The only
+We have `kubectl` installed but we haven't configured our cluster yet. The only
 thing we have to do is to copy our Kubernetes configuration file into a file
-in the Jenkins server. Let's do that now. First open your `~/.kube/config` file
-and copy it to your clipboard.
-Then ssh into your server and switch to the root user:
+in the Jenkins server. Let's do that now.
+First, ssh into your server and switch to the root user:
 
     # sudo su
 
-Now change to the jenkins user:
+Now switch to the jenkins user:
 
     # sudo su - jenkins
 
-And let's create a `kubectl` configuration file:
+And create a `kubectl` configuration file:
 
     # mkdir -p ~/.kube/
     # touch ~/.kube/config
 
-Now we have to copy the AWS configuration file for our cluster.
+Now we have to copy the AWS parts of the configuration file for our cluster.
+
 Open you `~/.kube/config` file and copy the AWS sections to the configuration file
 in the server. The parts you want copy should be these:
 
@@ -1994,7 +1999,7 @@ in the server. The parts you want copy should be these:
     clusters:
     - cluster:
         certificate-authority-data: XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-        server: https://52.39.25.30
+        server: https://XX.XX.XX.XX
       name: aws_kubernetes
     contexts:
     - context:
@@ -2015,35 +2020,36 @@ in the server. The parts you want copy should be these:
         password: XXXXXXXXXXXXXXXX
         username: admin
 
-Basically we are removing all of the `minikube` and leaving the production
+Basically we are removing all of the `minikube` parts and leaving the production
 cluster sections.
 
 Now if you run `kubectl get services` you should see the current services
-running in your cluster. That means Jenkins now can run deployment in our cluster.
+running in your cluster. That means Jenkins now can run works in our cluster.
 
-### Updating the cluster
+## Updating the cluster
 
 Now that we know Jenkins can use our cluster, let's add a build step to our
-Job. Go to your `Articles` project in Jenkins and click on `Configure`. Now
-at the end, add another `build step` but this time choose `Execute shell`.
+Job. Go to your `Articles` project in Jenkins and click on `Configure`.
+
+At the end, add another `build step` but this time choose `Execute shell`.
 The script we're adding here should update and rerun our setup-pod.yaml file
 and also update our application deployment. The deployment is very easy to update,
 we can just set the latest image we just created by using something like:
 
     kubectl set image deployment/articles articles=pacuna/articles:version_$BUILD_NUMBER
 
-But with the setup container is a little bit more complicated, since there's
+But with the setup container is a little bit more complicated. There's
 not an easy way of updating a pod. We have to modify the template so it takes
 the latest image version, delete it from the cluster and the run it again.
 
-For that we can use `sed` for finding the image by using a Regex and then
-replacing the file with a the created image like this:
+For that we can use `sed` for finding the image by using a Regex pattern and then
+replacing the file with the created image. Something like this should do the trick:
 
     $ sed -e 's/pacuna\/articles:[a-z0-9_]*/pacuna\/articles:version_$BUILD_NUMBER/g' kube/production/setup-pod.yaml \
     > kube/production/setup-pod.yaml.tmp && \
     mv kube/production/setup-pod.yaml.tmp kube/production/setup-pod.yaml
 
-Tha command will find the string `pacuna/articles:version_SOMENUMBER` and replace
+That command will find the string `pacuna/articles:version_SOMENUMBER` and replace
 it with `pacuna/articles:version_$BUILD_NUMBER` which is the recent built version.
 Then it'll replace the old file with the result of that replacing.
 
