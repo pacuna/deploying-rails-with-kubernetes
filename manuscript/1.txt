@@ -6,47 +6,54 @@ using the latest version. We are going to build an api-only application so we
 can test it easily and also because using containers for deploying heavy web applications
 is not a good idea in my opinion.
 
-If you are an active member of the development community you probably noticed
+If you are an active member of the development community you probably have noticed
 that the concept of services is taking more and more importance for web applications.
 That's why we are going to be focused on these types of applications and an API
 is a good representation of a small service that can be successfully deployed
-in a container.
+using containers.
 
-First, let me show you the versions of the tools I'm going to use during this section:
+First, let me show you the versions of the tools I'll be using during this section:
 
 - Ruby 2.3.1
 - Rails 5.0.0
 - PostgreSQL 9.5.3
 
-Rails 5 has some requirements on the ruby version you should use. So if you're
+Rails 5 has some requirements on the Ruby version you should use. So if you're
 using a minor version that mine, you should check the [requirements](http://guides.rubyonrails.org/upgrading_ruby_on_rails.html#upgrading-from-rails-4-2-to-rails-5-0).
 
 ## Creating the application
 
-Let's create a new api-only Rails application using [PostgreSQL](https://www.postgresql.org/)
+Let's create a new [api-only](http://edgeguides.rubyonrails.org/api_app.html)
+Rails application using [PostgreSQL](https://www.postgresql.org/)
 as our database. This API will be in charge of managing articles with a small
-set of fields.
+set of fields. We just want something we can play with:
 
     $ rails new articles --api --database=postgresql
 
 Now, assuming you have PostgreSQL already configured on your machine, you should
-be able to create the database and run the application:
+be able to create the database with:
 
     $ rake db:create
 
-After creating the database, you can run the `rails s` command and if you visit `localhost:3000`
-you should see the Rails welcome page.
+And to run the application with:
+
+    $ rails s
+
+Now if we cURL our localhost IP address from another terminal window or visit
+`localhost:3000` we should see the Rails welcome page.
 
 ## Adding a resource
 
 We said this was going to be an API for managing articles, so let's create
-a simple resource:
+a simple article resource:
 
     $ rails g scaffold articles title:string body:text
 
-This scaffold it's actually pretty cool because since our application
-is an api-only application, it'll create a controller already adapted for
-JSON responses. First let's migrate the database:
+This scaffold is actually pretty cool because it detects that our application
+is api-only, so it generates a controller already adapted for
+JSON responses.
+
+Let's migrate the database:
 
     $ rake db:migrate
 
@@ -90,17 +97,19 @@ Cool. Now that we have our API pretty much ready, it's time to dockerize the app
 
 ## Dockerizing the application
 
-With all the Docker images available for us today, it's pretty easy to dockerize
+With all the Docker images available in these days, it's pretty easy to dockerize
 an application. In our case we only going to need something for the Rails app
 and something for PostgreSQL. In the case of Rails you have practically the same
-options you have when you don't use containers for deployments, and for PostgreSQL
+options you have when you don't use containers for deployments. And for PostgreSQL
 we can use the official image from DockerHub.
-For Ruby/Rails I strongly recommend you to use the [phusion passenger-docker](https://github.com/phusion/passenger-docker) image.
-It has a lot of features and a very nice documentation. You can have a solid
-production application server out of the box with that image, so we will stick
-with that during this book.
 
-The versions I'll be using for this section are:
+For Ruby/Rails I strongly recommend you to use the [phusion passenger-docker](https://github.com/phusion/passenger-docker) image.
+It has a lot of features and a very nice documentation.
+You can have a solid production application server out of the box with that image, so we will stick
+with that during this book. Keep in mind that if you choose another application server
+like `unicorn` or `puma`, the setup is going to be quite different.
+
+The Docker and Docker Compose versions I'll be using for this section are:
 
 - Docker Version 1.12
 - Docker Compose version 1.8
@@ -108,11 +117,14 @@ The versions I'll be using for this section are:
 First we are going to create a container environment by using Docker Compose.
 That's just for testing, since our final goal is to able to run our system with
 Kubernetes. Nevertheless, this is a good starting point to see if our images
-and containers configuration work as expected.
+and containers configuration work as expected. Also, Kubernetes is not for
+development, so if you're planning to have a Dockerize development environment, you should
+stick with this setup.
 
-Our application needs to be build by using the phusion passenger-docker image. So
+The application needs to be build using the phusion passenger-docker as the base image. So
 we need a Dockerfile. This Dockerfile is also going to add some extra files.
-The typical configuration that you need for using this image, are the virtual host
+
+The typical configuration that you need for this image, are the virtual host
 for your application and a file for declaring the environmental variables
 you may need in your application. First, let's create a file for holding
 the virtual host configuration:
@@ -132,7 +144,7 @@ And add the following to that file:
         passenger_ruby /usr/bin/ruby2.3;
     }
 
-That's a very simple virtual host configuration for Nginx and passenger. This
+As you can see we have a very simple virtual host configuration for Nginx and passenger. This
 file will be added to the available hosts of the server during the container
 build.
 
@@ -143,19 +155,20 @@ so we know how to declare them later:
 
 And add the following:
 
-
     env SECRET_KEY_BASE;
     env DATABASE_URL;
     env DATABASE_PASSWORD;
 
 We won't be using those variables during development so don't worry about them
-for now.
+for now. You just need to know that every environmental variable that you need
+in your application should be declared here so they are preserved and forwarded to your
+web application.
 
 Now we can create the Dockerfile that's going to add those files along the entire application.
 I've added comments for every instruction so you can know what's happening
 on every step during the build. If you still have doubts about some instructions,
-just go to the [official repository](https://github.com/phusion/passenger-docker) of the image and take a look at the documentation, it's
-really good.
+just go to the [official repository](https://github.com/phusion/passenger-docker)
+of the image and take a look at the documentation, it's really good.
 
     $ touch Dockerfile
 
@@ -208,9 +221,12 @@ And the content:
 
 That Dockerfile should do the trick for our Rails application. It might seem a little
 bit complicated at first, but trust me, you'll get used to it after building a
-couple of Rails services. The cool thing about this setup, is that you'll be using
+couple of Rails services.
+The cool thing about this setup, is that you'll be using
 the same server for development and production, so you'll have a lot less work to do
-when you ship to production.
+when you ship to production. This image in particular uses the `PASSENGER_APP_ENV`
+variable for setting the environment. So for example in Rails, that variable
+controls the `RAILS_ENV` variable.
 
 Now that we have the Dockerfile for building our application, we need a Docker
 Compose file so we can run the database and then test these containers to see
@@ -230,15 +246,17 @@ that we're running our web application. That would work fine if you're deploying
 only one container, but suppose you want to scale your application and you want to run
 ten containers, then every one of those containers will be trying to execute
 those commands during startup time and things can get ugly. With that said, it's
-always better to separate concerns and use an independent container for running
-tasks and then just remove them once they finish.
+always better to separate concerns and to use an independent container for running
+tasks and then just remove it once it finishes.
 
-This setup container has to use the same Dockerfile that we created for our web application
-since it needs access to the whole application. The only thing we need to do
-is to overwrite its entrypoint. Right now we don't have an entrypoint for
+This setup container has to use the same Dockerfile that we just created
+since it needs access to the whole application. The only part we need to
+overwrite the entrypoint.
+Right now we don't have an entrypoint for
 our web application container since we want to use the one that the same image
-is providing for us. But since this setup container doesn't need to be live, we
-can just overwrite it with our initialization commands. Let's create this file:
+is providing for us. But since this setup container doesn't need to be running as a web application, we
+can just overwrite it with our own initialization commands. Let's create this new entrypoint script
+in our root path:
 
     $ touch setup.sh
 
@@ -256,15 +274,17 @@ And add the following:
 
     rake db:migrate
 
-The whole purpose of this piece of code is to run the possible new
+The whole purpose of this script is to run the possible new
 migrations our application may have. But, what if the database is not yet
 available for the rake task? That would generate an error and the whole
 run would crash. That's why we use a while expressions that's going to loop
 until the connection is alive. We are using the `netcat` package for this and assuming
 that the PostgreSQL service endpoint will be reachable by using the `postgres`
 alias. Finally, when the connection is alive, we can run the latests migrations.
+This type of scripts are very usual when you need to orchestrate different services
+that are constantly being shut down and turned on.
 
-Let's create the `docker-compose.yml` file and add this service:
+Let's create the `docker-compose.yml` file in our root path and add the service:
 
     $ touch docker-compose.yml
 
@@ -282,11 +302,13 @@ And the service:
 
 This service will use the Dockerfile we already have for the build. It has
 a dependency on a service we haven't declared yet and which name will be `postgres`.
+
 We are also passing an environmental variable for the Rails environment. This is one
 of the ways of setting the `RAILS_ENV` variable for this image and it's described
 in the documentation.
-Finally, we are overwriting the entrypoint with the previous bash script. Since
-this script doesn't do anything after the migration, the container will be exited
+
+Finally, we are overwriting the entrypoint with the previous bash script.
+Since this script doesn't do anything after the migration, the container will be exited
 when it finishes, which is want we want.
 
 ### Web Application Container
@@ -294,7 +316,7 @@ when it finishes, which is want we want.
 This service will be similar to the setup service. The differences are:
 
 - We need to declare a dependency on the setup container so it always runs after it
-- We need to map the port 80 of the container to our host if we want to access our application via http
+- We need to map the port 80 of the container to our host if we want to access our application via HTTP
 
 We can express all of that with:
 
@@ -307,6 +329,10 @@ We can express all of that with:
         - PASSENGER_APP_ENV=development
       ports:
         - "80:80"
+
+As you can see in this service, we are not touching the entrypoint. The default one
+provided by the base image will be executed and the application will be launched as a web
+application.
 
 ### Database Container
 
@@ -321,14 +347,25 @@ password and database name:
         - POSTGRES_USER=articles
 
 If we don't declare the database name, the container will create one with the same
-user name. In this case our user and database will be `articles`. Since the container
-will create this database during startup, we don't need to run `rake db:create`
+user name. In this case our user and database will be `articles`.
+Since the container will create this database during startup, we don't need to run `rake db:create`
 in our application initialization script.
 
 You can get fancy and add data volumes for persisting the database data and for
 mounting your source into the web application container, but since this book
 is more about deployment, and also because later will see how to persist data
 on production by using AWS volumes, let's just leave it like that.
+
+Keep in mind that for a daily development workflow, you **want** to mount your source
+file into the application container. That way you can see your changes immediately
+inside of the container. You can accomplish this with just one line of code:
+
+    volumes:
+      - .:/path-to-my-source
+
+That's going to mount your local source code to the folder where the application
+lives inside of the container.
+
 The final `docker-compose.yml` file should look like this:
 
     version: '2'
@@ -399,7 +436,7 @@ you should see something like this in the output:
     Successfully built 47e8a4833c88
 
 Meaning that the web application image was successfully built.
-Now we can run the Docker Compose up command to pull the PostgreSQL image, 
+Now we can run the Docker Compose up command to pull the PostgreSQL image,
 run the initialization script and setup the entire system:
 
     $ docker-compose up
@@ -453,6 +490,7 @@ And here in my case you can see our script in action. If you look at the line th
 
 You can see the setup container trying to connect to the PostgreSQL container
 in order to run the migrations, but the PostgreSQL initialization wasn't ready yet.
+
 Then you see our `PostgreSQL started` message almost at the end and then the database migration being executed.
 You can also see the setup container being exited.
 
@@ -468,9 +506,10 @@ Finally you'll see something like this:
 Which indicates that the passenger and Nginx processes are ready and listening.
 
 Let's test the application via cURL. You should replace the localhost address
-which whatever you're using for running Docker. In my case I'm using Docker for Mac,
+with whatever you're using for running Docker. In my case I'm using Docker for Mac,
 so my Docker IP is localhost. Also remember not to kill the Docker Compose up process.
-Open a different tab for testing the endpoints:
+
+Open a different tab and test the create endpoint:
 
     $ curl -H "Content-Type: application/json" -X POST -d '{"title":"my first article","body":"Lorem ipsum dolor sit amet, consectetur adipiscing elit..."}' http://localhost/articles
 
