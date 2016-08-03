@@ -526,14 +526,14 @@ In order to be able to run our web application with Kubernetes, we need to push
 our image to some registry. Let's use a public repository from DockerHub and
 later I'll show how you can use a private one.
 
-First, make sure you are logged with your Docker account by running:
+First, make sure you are logged in with your Docker account by running:
 
     $ docker login
 
 That's going to ask you for your DockerHub credentials. Now go to `https://hub.docker.com/`
-and create a new public repository an name it `articles`.
+and create a new public repository and name it `articles`.
 
-Now, let's build an initial version of our application. Replace username with yours:
+Now, let's build an initial version of our application. Replace `username` with yours:
 
 
     $ docker build -t username/articles:v_0 .
@@ -549,11 +549,16 @@ Now we can start writing the Kubernetes templates for deploying our application.
 ## Structuring the files
 
 In order to keep a better application structure, let's add
-some folders that will hold our Kubernetes configuration.
+some folders for the Kubernetes configuration.
+
 We'll use a `kube` folder, and two subfolders, `development` and `production`.
 As you can imagine, the production templates are going to be a little different
 than the development ones, since some elements cannot be replicated on development
-such as Load Balancers and AWS data storages.
+such as Load Balancers and AWS data storages. Don't confuse this development with
+your development environment. Every time we talk about Kubernetes on development
+environment, we refer to test our cluster locally, not to actually the development
+environment that we use daily for writing our code. For that we still have to use
+tools like Docker Compose is we want to use containers.
 
     $ mkdir -p kube
     $ mkdir -p kube/development
@@ -615,7 +620,7 @@ That's kind of a long YAML file (and it'll get bigger), but keep in mind
 that the file contains all the necessary elements that we need for the PostgreSQL
 deployments. It'll generate the Pod, the replica set that's going to manage the pod
 and also the service so our web application and the setup container can reach
-the service by using the same alias we used in development.
+it by using the same alias we used in development.
 
 Let's go section by section:
 
@@ -635,19 +640,28 @@ Let's go section by section:
 
 The first section of the file is the service declaration. In the deployment file
 we can declare more than one kind, and we separate them by using `---`.
-This service has a name `postgres` meaning that we are going to be able to use
+
+This service has a name `postgres`, meaning that we are going to be able to use
 that alias for communicating with it from our cluster. It also has a label
 that can be useful for doing filtering.
+
 The spec section will tell the service where it should be routing
-the requests. In this case is going to match two selectors: app and tier
-with the values articles, which is the main system, and the tier which
-is postgres. The `tier` is the selector that's going to differentiate the
+the requests. In this case is going to match two selectors: `app` and `tier`
+with the values articles, which is the main context, and the tier which
+is postgres.
+
+The `tier` is the selector that's going to differentiate the
 web application containers and the PostgreSQL container, since both are going
 to have an `app` selector with the value `articles` but a different `tier` selector
-value.
+value. The purpose of the `app` selector is that you are to able to have several
+different applications running in cluster, and for example if you have another application
+named `users` for example, you can have the same `postgres` tier but a different `app`
+label.
+
 We are also indicating the communication port should be 5432, which is the standard
-for PostgreSQL, and finally we are telling Kubernetes that this service should be
-only accessed from inside the cluster by using `clusterIP` setted to `None`.
+for PostgreSQL. And finally we are telling Kubernetes that this service should be
+only accessed from inside the cluster by using `clusterIP` setted to `None`. That means
+you won't be able to touch this endpoint from outside the cluster.
 
     apiVersion: extensions/v1beta1
     kind: Deployment
@@ -676,18 +690,24 @@ only accessed from inside the cluster by using `clusterIP` setted to `None`.
             - containerPort: 5432
               name: postgres
 
-The second section corresponds to the deployment it self. We start
-by adding the same metadata we used for the service and then the
+The second section corresponds to the deployment it self.
+
+We start by adding the same metadata we used for the service and then the
 specifications. We then define our strategy as `RollingUpdate`. This means
 that old Pods won't be killed before new ones are created. Instead
-they will be replace in a rolling-update fashion. So you're going to have
+they will be replaced in a rolling-update fashion. So you're going to have
 several copies of your pods running simultaneously.
-Then for the template, we have to specify the match we need for this
+
+Then, for the template, we have to specify the match we need for this
 replica set and pods. As I mentioned before, the service will be looking
 for two labels: `app` and `tier` and it must match this metadata.
+
 Finally we define the specifications for the containers. This is pretty
 similar to the Docker Compose file structure and it contains the image, the
 environmental variables, the port and the container name.
+
+And that's it for the PostgreSQL deployment for now. Later we'll add another
+section for the persistence storage.
 
 ### Setup Container
 
@@ -719,21 +739,22 @@ And add the following:
 
 This pod has a very simple definition. It has a `restartPolicy` of never, so
 once it finishes it doesn't get restarted by the scheduler. The
-containers section contains the specs for our image that we just pushed
-to DockerHub (remember to change with yours). Similar to what we did with
-Docker Compose, we set the necessary environmental variables, we add
+`containers` section contains the specs for the image that we just pushed
+to DockerHub (remember to change with yours).
+
+Similar to what we did with Docker Compose, we set the necessary environmental variables, add
 an `imagePullPolicy`: so we can override tags we push to DockerHub, and finally
-a command instruction for running our custom entrypoint.
+a command instruction for running our custom entrypoint. As you can see, in Kubernetes
+there's not an `entrypoint` instruction but a `command` one that behaves in a similar
+fashion.
 
 ### Web Application
 
 This deployment file is also going to have two kinds, a service and a deployment.
 
-
     $ touch kube/development/articles-deployment.yaml
 
 And add the following template:
-
 
     apiVersion: v1
     kind: Service
@@ -775,21 +796,27 @@ And add the following template:
               name: articles
             imagePullPolicy: Always
 
-
 Let's go by section. First, the service definition is pretty similar to the one
-we have for the PostgreSQL deployment. The difference here is we are using a difference set of
+we have for the PostgreSQL deployment. The difference here is we are using a new set of
 selectors. The PostgreSQL uses a tier named `postgres`, and this one uses a tier named
 `frontend`. This way the service can route the requests to the correct replica set
 that has those same labels.
-Another difference is we are using a type for the service. For development we are
-using the type `NodePort` which is a way of exposing a port for accessing the application
+
+Another difference is we are using a `type` for the service. On development we use
+the type `NodePort`. Which is a way of exposing a port for accessing the application
 from outside the cluster. On production we'll use a `LoadBalancer` type, type that
-we don't have for our local cluster.
+we don't have for our local cluster. The difference between these two types is that
+the `NodePort` will expose a random port from the cluster for accessing the application.
+This port can't change between deploys. On the other side, the `LoadBalancer` type, will
+use the provider's api (AWS or GCE) for creating a real Load Balancer in your account.
+And this Load Balancer will have a static DNS we can use for connecting to the service, and also
+will balance the requests between all the pods replicas we declare in the specs.
 
 Then we have the deployment section. This section contains the metadata with
 the respective name and label and the specification section. We are using a `RollingUpdate`
 strategy for the new deployments. Then we declare the labels so the service
 can locale the respective replica set.
+
 Finally we have the container specifications. We are using the image we pushed to
 DockerHub (replace with yours), passing the `PASSENGER_APP_ENV` variable
 for setting the Rails environment, exposing the port and adding an `imagePullPolicy`
@@ -805,7 +832,7 @@ Your final structure for the deployment files should be something like:
     │   └── production
 
 Now it's time to try those templates on a local cluster. For that we are going
-to use a very useful tool called Minikube.
+to use a very handy tool called Minikube.
 
 ## Minikube
 
