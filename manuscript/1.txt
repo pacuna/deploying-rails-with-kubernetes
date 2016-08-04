@@ -841,27 +841,38 @@ According to the [official Minikube repository](https://github.com/kubernetes/mi
 > Minikube is a tool that makes it easy to run Kubernetes locally.
 
 Before Minikube, running Kubernetes locally was pretty hard. You had some alternatives
-like running a cluster using Vagrant, but Minikube gives you a much better experience
-in my opinion. We'll use Minikube in order to test our Kubernetes configuration files
-without having to lunch test servers in the cloud.
+like running a cluster using Vagrant or just use plain Docker.
+Minikube gives you a much better experience in my opinion. Most of the setup is
+pretty transparent for us and as with all the Kubernetes tooling, it just works.
+
+We'll use Minikube in order to test our Kubernetes configuration files
+without having to launch test servers in the cloud. That's a very big step
+in the container orchestration world. Even though Docker reduces the friction
+between development and production environments, you still need to make the transition
+between your local *deployment* and  your real production deployment.
 
 Now, don't confuse testing your cluster locally with local development. Minikube isn't
-yet a development tool, but a tool for testing your cluster configuration before
+yet a development tool, but a tool for testing your cluster's configuration before
 shipping it to production. You still need to use Docker and Docker Compose or any
 other tool you use daily to work on your code.
 
-You can find all of the installation instructions in the [official repository](https://github.com/kubernetes/minikube).
+You can find the installation instructions for Minikube in the [official repository](https://github.com/kubernetes/minikube).
 
 The version I have on my machine is 0.6.0 and I'll be using the `xhyve` driver.
 You can use whatever is best for your platform.
-You're also going to need the `kubectl` tool for launching the services and
+
+You also need the `kubectl` CLI tool for launching the services and
 deployments. [Here](http://kubernetes.io/docs/user-guide/prereqs/) you can find the instructions for installing `kubectl`.
-This is all the information I have for the version I have installed:
+This CLI tool communicates with our cluster in order to run containers and
+services. It has a pretty solid integration with cloud services like Amazon AWS
+and Google's GCE. This tool will be our main channel of interaction with our cluster.
+
+This is the information for the version I have:
 
     Client Version: version.Info{Major:"1", Minor:"4+", GitVersion:"v1.4.0-alpha.1", GitCommit:"897d2770950db06d4c6a51f10b4fcf6d389f9736", GitTreeState:"clean", BuildDate:"2016-07-11T20:14:46Z", GoVersion:"go1.6.2", Compiler:"gc", Platform:"darwin/amd64"}
     Server Version: version.Info{Major:"1", Minor:"3", GitVersion:"v1.3.0", GitCommit:"283137936a498aed572ee22af6774b6fb6e9fd94", GitTreeState:"clean", BuildDate:"1970-01-01T00:00:00Z", GoVersion:"go1.6.1", Compiler:"gc", Platform:"linux/amd64"}
 
-Make sure you're using that version or a later one.
+Make sure you're using that version or a newer one.
 
 Once you have Minikube and kubectl ready to go, you can create your local
 cluster by running:
@@ -875,20 +886,34 @@ similar to this:
     Kubernetes is available at https://192.168.99.100:8443.
     Kubectl is now configured to use the cluster.
 
-Meaning you have a Kubernetes cluster running locally.
+Meaning your local Kubernetes cluster is running.
+
 Minikube gives a handful set of commands for interacting with the cluster.
 For example you can run:
 
     $ minikube dashboard
 
-Which will open your default browser and display the Kubernetes user
-interface where you can see all the workloads running in the cluster. Right now we shouldn't
-have any workload running.
+Which will open your default browser and take you to the Kubernetes UI
+where you can see all the workloads running in the cluster. Right now we shouldn't
+have any. You can also run tasks and services from this Dashboard. I don't think
+many people would actually use the UI as a main way of managing their services, but
+it's still a nice to have element for monitoring and have a quick view of what's happening in our
+cluster.
+
+### Running our templates with Minikube
 
 Sadly, Kubernetes currently doesn't have a dependency mechanism like Docker Compose
-does. So we have to create our resources in the correct order. Let's start with
-the PostgreSQL deployment. Run the following command from the root of the
-application:
+does. So we have to create our resources in the correct order.
+
+The first `kubectl` command you should know, is the `create -f` command. This command
+can saves us a lot of headaches from trying to memorize different syntaxes for
+running different Kubernetes kinds. You can pass any template as an argument
+to this command, and as long as you have the `Kind` defined in the template, `kubectl`
+will know what to do with it.
+
+Let's start with the PostgreSQL deployment template.
+
+Run the following command from the root of the application:
 
     $ kubectl create -f kube/development/postgres-deployment.yaml
 
@@ -919,16 +944,17 @@ Output:
       ---------     --------        -----   ----                            -------------       --------        ------                  -------
       33s           33s             1       {deployment-controller }           Normal           ScalingReplicaSet       Scaled up replica set postgres-524157917 to 1
 
-If you run `minikube dashboard` again, you should see the new workloads. This
-deployment generates a service, a replica set and a pod. For example, if you want
-to see the events for the pod, you can run:
+If you run `minikube dashboard` again, you should see the new workloads.
+
+This deployment generates a service, a replica set and a pod.
+If you want to see the events for the Pod, you can run:
 
     $ kubectl describe pod postgres
 
 And you'll have a big output that describes the pod specifications and also
 the events in case something goes wrong.
 
-Now that we have our database running, let's launch our setup pod that's
+Now that we have our database running, let's launch the setup pod that's
 going to run the migrations for the application:
 
     $ kubectl create -f kube/development/setup-pod.yaml
@@ -937,7 +963,7 @@ Output:
 
     pod "articles-setup" created
 
-This can take a few minutes the first since it has to pull the entire
+This can take a few minutes the first time, since it has to pull the entire
 image from DockerHub.
 
 If you run:
@@ -946,15 +972,14 @@ If you run:
 
 You can see the events at the end of the output:
 
-
     Events:
       FirstSeen     LastSeen        Count   From                    SubobjectPath                       Type            Reason          Message
       ---------     --------        -----   ----                    -------------                       --------        ------          -------
       3m            3m              1       {default-scheduler }               Normal           Scheduled       Successfully assigned articles-setup to minikubevm
       3m            3m              1       {kubelet minikubevm}    spec.containers{articles}   Normal          Pulling         pulling image "pacuna/articles:v_0"
 
-And as you can see in my case it's still pulling the image. Wait for couple
-of minutes and then rerun the command:
+And as you can see in my case, it's still pulling the image.
+Wait for couple of minutes and then rerun the command:
 
     $ kubectl describe pod articles-setup
 
@@ -969,7 +994,7 @@ Output:
       3m            3m              1       {kubelet minikubevm}    spec.containers{articles}       Normal          Started         Started container with docker id aaef08a467bf
       3m            3m              1       {kubelet minikubevm}    spec.containers{articles}       Normal          Killing         Killing container with docker id aaef08a467bf: Need to kill pod.
 
-As you can see, the container was killed. Let's see if we can find something
+This time we found more events. The container was killed. Let's see if we can find something
 in the logs:
 
     $ kubectl logs articles-setup articles
@@ -983,10 +1008,12 @@ Output:
        -> 0.0085s
     == 20160723153218 CreateArticles: migrated (0.0087s) ==========================
 
-Cool! So the container ran the migrations and the it died, just what we wanted.
-In case you wonder, that log command receives the pod name and then the container name.
-That's why we use `articles-setup articles`. If you see the pod specification,
-you'll see that the container name we assigned was actually `articles`.
+Cool! So the container ran the migrations and then died. Just what we wanted.
+
+In case you wonder, that `log` command receives a Pod name and then a container name.
+That's why we use `articles-setup articles`. If you see the Pod specification from that template,
+you'll see that the container name we assigned is `articles` and the Pod's name
+is `articles-setup`.
 
 Now, let's run the last piece, the web application:
 
@@ -1002,9 +1029,10 @@ Output:
     service "articles" created
     deployment "articles" created
 
-Don't worry about that warning. That's would important only if we were
+Don't worry about that warning. That message would be relevant only if we were
 using this service type on a production cluster.
-This should run much faster than the previous one since we already have the image
+
+This command should run much faster than the previous one, since we already have the image
 on the cluster. Let's check that by running:
 
     $ kubectl get pods
@@ -1015,7 +1043,7 @@ Output:
     articles-1992548935-5es1h   1/1       Running   0          3m
     postgres-524157917-pxhj0    1/1       Running   0          22m
 
-Now grab that pod name for your articles containers (it will be different than mine)
+Now copy that pod name for your articles containers (it will be different than mine)
 and check the logs:
 
     $ kubectl logs articles-1992548935-5es1h
@@ -1046,6 +1074,7 @@ Run:
 
 And that should take you to the cluster's IP address and the port that
 was assigned to our service. There's where our application lives.
+
 Let's find our service address and make a post request to our
 articles endpoint. First we need our Minikube VM IP:
 
@@ -1056,7 +1085,6 @@ Output:
     192.168.99.100
 
 And now the port the cluster assigned to our service:
-
 
     $ kubectl describe service articles
 
@@ -1074,9 +1102,10 @@ Output:
     Session Affinity:       None
     No events.
 
-So in my case I know that our service should be located at `http://192.168.99.100:30097`.
-In your case you have to find your NodePort in the service description in order
+So in my case I know that the service should be reachable at `http://192.168.99.100:30097`.
+In your case, you have to find your `NodePort` in the service description in order
 to find the exposed port.
+
 Let's make a curl POST request to the endpoint:
 
     $ curl -H "Content-Type: application/json" -X POST -d '{"title":"my first article","body":"Lorem ipsum dolor sit amet, consectetur adipiscing elit..."}' http://192.168.99.100:30097/articles
@@ -1088,8 +1117,10 @@ Output:
 Great! We have our application fully running in our local Kubernetes cluster.
 The transition to a production cluster will not be hard at all. We just need
 to configure two more elements in our architecture, the Load Balancers and
-the Volume for persisting the data. There are also some changes we need to make to our
-application for running on production. We'll need a secret token for that environment
+the Volume for persisting the data.
+
+There are also some minor changes we need to make to our
+application for running on production. For example we'll need a secret token for production
 and also configure our database.
 
 ## Setting up AWS CLI
