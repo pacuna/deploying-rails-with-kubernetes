@@ -1234,10 +1234,14 @@ to this:
         username: admin
 
 Visit your cluster's IP address and use those credentials for login into
-the cluster. Once you're logged in, you'll first see a list of endpoints you can
+the cluster.
+
+Once you're logged in, you'll first see a list of endpoints you can
 access from there. The dashboard is under the `/ui` namespace. So in my case
 I can visit `https://52.41.37.108/ui` and that'll take me to my production
-cluster's dashboard. Now we just need to prepare our templates for production.
+cluster's dashboard.
+
+Now we just need to prepare our templates for production.
 
 ## Testing production settings with Minikube
 
@@ -1246,8 +1250,8 @@ shipping it to a production environment. We'll make these changes and then we'll
 to deploy it with Minikube to see if it works. We still won't add persistence storage. We just
 want to check if the Rails production environment works correctly.
 
-First, we need to add a secret token for production environment. In the root
-of the application run:
+First, we need to add a secret token for production environment.
+In the root of the application, run:
 
     $ rake secret
 
@@ -1264,6 +1268,7 @@ production section:
       password: mysecretpassword
 
 And that's it. Now let's test this configuration with Minikube.
+
 First let's switch the kubectl context:
 
     $ kubectl config use-context minikube
@@ -1582,7 +1587,7 @@ Output:
         "Size": 10
     }
 
-The output gives us the VolumeId we're going to need later for our template so
+The output gives us the `VolumeId` we're going to need later for our template so
 don't lose it.
 
 Now, let's open the deployment file for the PostgreSQL service and change the
@@ -1611,8 +1616,9 @@ container specification so it looks like this:
             volumeID: vol-24e48391
             fsType: ext4
 
-Replace the volumeID property with yours. In order to use the AWS Volume,
-we have to declare a new PGDATA for the database, a volume and also
+Replace the `volumeID` property with yours.
+
+In order to use the AWS Volume, we have to declare a new `PGDATA` for the database, a volume, and also
 mount that volume using the `volumeMounts` property. Then, by only using
 its `VolumeId`, we can access the volume and save our data.
 
@@ -1765,16 +1771,19 @@ for a search engine like Elasticsearch or another database like MySQL or MongoDB
 
 One of the cool features of deployments in Kubernetes, is that you can
 run updates very easily on your application. We only need to create the new version
-of the image we want to deploy and update our deployment template. Then with just
-one command we will have a new version up. Let's try that now. We are going to
-add a new field to our articles table. This would require apply migrations, so we also
-going to have run our setup container before the update. Don't worry, once we
+of the image we want to deploy, and then update our deployment template.
+Then with just one command we can have a new version running.
+
+Let's try that now.
+
+We are going to add a new field to our articles table. This would require apply migrations, so we also
+going to have to run our setup container before the update. Don't worry, once we
 start to use jenkins for our deployments, everything will be automatic. But for now
-let just stay with the kubectl commands.
+let just stay with the `kubectl` commands.
 
 Let's add the new field in our Rails application:
 
-    rails g migration AddSlugToArticles slug:string
+    $ rails g migration AddSlugToArticles slug:string
 
 Let's also generate this slug automatically before the record
 gets saved in the articles#create action:
@@ -1838,19 +1847,27 @@ Output:
 
     {"id":2,"title":"my second article","body":"Lorem ipsum dolor sit amet, consectetur adipiscing elit...","created_at":"2016-07-25T01:35:40.113Z","updated_at":"2016-07-25T01:35:40.113Z","slug":"my-second-article"}%
 
-The slug was generated correctly. We just made our first real deployment to our
-application. In the next section we'll see how to automate this entire process
+The slug was generated correctly.
+
+We just made our first real deployment to our application. This new concept
+of deployments allows us to run updates to our software very easily. You only need
+to generate a new image, and update your current deployment by keeping it's metadata
+and the using the `apply command`. Then Kubernetes will update the pods, replica sets
+and make sure the service can route the requests to the correct pods.
+
+In the next section we'll see how to automate this entire process
 with a single operation. For that we'll need to install Jenkins with a couple
 of plugins.
 
 # Continuous Integration (CI)
 
 In this chapter I'll show how you can automate the entire deployment process
-using Jenkins. Our final goal is to be able to update our application running in the
-cluster by pushing to some Git branch. The series of steps for this to happen
-should be:
+using Jenkins. Our final goal is to be able to update our application
+by pushing to some Git branch.
 
-- A change is pushed to your the application repository on GitHub
+Out desired workflow can be summarize in:
+
+- A change is pushed to the application repository on GitHub
 - A service hook tells Jenkins a new version is available
 - Jenkins pulls the latests changes from GitHub
 - Jenkins builds a new Docker image with this new version
@@ -1859,17 +1876,19 @@ should be:
 - Jenkins applies the changes by making calls to the cluster's API
 
 Those steps are basically what we have been doing manually until now, so it shouldn't
-be so hard to automate them. Although, a big difference is that we have
-a system completely configured to interact with all those difference services. So
+be so hard to automate them. Although, a big difference is that our current machine is
+completely configured to interact with all those difference services. So
 the main difficulty with this pipeline will be to configure the Jenkins server
-so it can connect to all the different service accounts with no issues.
+so it can connect to all the different service accounts.
 
 Let's start by installing Jenkins on a new machine.
 
 ## Installing Jenkins
 
 For Jenkins, we are going to run a new AWS EC2 instance. We'll be using the
-AWS CLI for creating all the different resources we need.
+AWS CLI for creating all the different resources we need. You can use the AWS
+Dashboard, but I prefer this approach since you can document everything and
+reuse the commands after.
 
 ### Creating a Key Pair
 
@@ -1882,7 +1901,7 @@ Then we need to add the permissions for that pem:
 
     $ chmod 400 Jenkins.pem
 
-Save this key in a safe folder. I like to use `~/.ssh/keys` for saving all my key pairs.
+Save this key in a safe folder. I like to keep my key pairs in `~/.ssh/keys`.
 
 ### Creating a Security Group
 
@@ -1915,7 +1934,7 @@ with decent specs for a small Jenkins server:
 
     $ aws ec2 run-instances --image-id ami-7172b611 --count 1 --instance-type t2.medium --key-name Jenkins --security-group-ids sg-XXXXXXXX --block-device-mappings '[{ "DeviceName": "/dev/xvda", "Ebs": { "VolumeSize": 20 } }]'
 
-You'll have a big output showing you all the date for that new instance:
+You'll have a big output showing you all new instance information:
 
     {
         "OwnerId": "586421825777",
