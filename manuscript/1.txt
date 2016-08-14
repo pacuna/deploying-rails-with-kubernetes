@@ -712,41 +712,47 @@ section for the persistence storage.
 ### Setup Container
 
 In the case of the setup container, we don't need a replica set, service nor
-deployment. We only need a pod that gets the job done. Let's create a definition
-for that pod:
+deployment. We only need a pod that gets the job done. For that we are going to use
+a Kubernetes [job](http://kubernetes.io/docs/user-guide/jobs/). Think of a Job
+as a special kind of pod that was meant to be use for these kinds of tasks.
+It's going to create a pod that'll run the command we indicate and it'll end
+after the container finishes.
 
-    $ touch kube/development/setup-pod.yaml
+The syntax for writing a Job template is quite simple. Let's create the file:
+
+    $ touch kube/development/setup-job.yaml
 
 And add the following:
 
-    apiVersion: v1
-    kind: Pod
+    apiVersion: batch/v1
+    kind: Job
     metadata:
-      name: articles-setup
+      name: setup
     spec:
-      restartPolicy: Never
-      containers:
-      - image: username/articles:v_0
-        name: articles
-        env:
-        - name: PASSENGER_APP_ENV
-          value: development
-        ports:
-        - containerPort: 80
-          name: articles
-        imagePullPolicy: Always
-        command: ["/bin/bash", "./setup.sh"]
+      template:
+        metadata:
+          name: setup
+        spec:
+          containers:
+          - name: setup
+            image: pacuna/articles:v_0
+            command: ["/bin/bash", "./setup.sh"]
+            env:
+            - name: PASSENGER_APP_ENV
+              value: development
+          restartPolicy: Never
 
 This pod has a very simple definition. It has a `restartPolicy` of never, so
-once it finishes it doesn't get restarted by the scheduler. The
-`containers` section contains the specs for the image that we just pushed
+once it finishes it doesn't get restarted by the scheduler.
+
+The `containers` section contains the specs for the image that we just pushed
 to DockerHub (remember to change with yours).
 
 Similar to what we did with Docker Compose, we set the necessary environmental variables, add
-an `imagePullPolicy`: so we can override tags we push to DockerHub, and finally
-a command instruction for running our custom entrypoint. As you can see, in Kubernetes
-there's not an `entrypoint` instruction but a `command` one that behaves in a similar
-fashion.
+and a command instruction for running our custom entrypoint.
+
+As you can see, in Kubernetes there's not an `entrypoint` instruction but a `command` key
+that behaves in a similar fashion.
 
 ### Web Application
 
@@ -828,7 +834,7 @@ Your final structure for the deployment files should be something like:
     │   ├── development
     │   │   ├── articles-deployment.yaml
     │   │   ├── postgres-deployment.yaml
-    │   │   └── setup-pod.yaml
+    │   │   └── setup-job.yaml
     │   └── production
 
 Now it's time to try those templates on a local cluster. For that we are going
@@ -954,50 +960,31 @@ If you want to see the events for the Pod, you can run:
 And you'll have a big output that describes the pod specifications and also
 the events in case something goes wrong.
 
-Now that we have our database running, let's launch the setup pod that's
+Now that we have our database running, let's launch the setup job that's
 going to run the migrations for the application:
 
-    $ kubectl create -f kube/development/setup-pod.yaml
+    $ kubectl create -f kube/development/setup-job.yaml
 
 Output:
 
-    pod "articles-setup" created
+    job "setup" created
 
 This can take a few minutes the first time, since it has to pull the entire
 image from DockerHub.
 
-If you run:
+To see what's happening with our Job, we can filter the Job's pods by the Job's name
+and the run the logs command for that pod.
 
-    $ kubectl describe pod articles-setup
+First let's get the name of the pod. The name we used for the job was `setup`:
 
-You can see the events at the end of the output:
 
-    Events:
-      FirstSeen     LastSeen        Count   From                    SubobjectPath                       Type            Reason          Message
-      ---------     --------        -----   ----                    -------------                       --------        ------          -------
-      3m            3m              1       {default-scheduler }               Normal           Scheduled       Successfully assigned articles-setup to minikubevm
-      3m            3m              1       {kubelet minikubevm}    spec.containers{articles}   Normal          Pulling         pulling image "pacuna/articles:v_0"
+    $ pods=$(kubectl get pods --selector=job-name=setup --output=jsonpath={.items..metadata.name})
 
-And as you can see in my case, it's still pulling the image.
-Wait for couple of minutes and then rerun the command:
+Now if you run `echo $pods` you'll get the name of the associated pod.
 
-    $ kubectl describe pod articles-setup
+Let's see the logs:
 
-Output:
-
-     FirstSeen     LastSeen        Count   From                    SubobjectPath                   Type            Reason          Message
-      ---------     --------        -----   ----                    -------------                   --------        ------          -------
-      8m            8m              1       {default-scheduler }                                    Normal          Scheduled       Successfully assigned articles-setup to minikubevm
-      8m            8m              1       {kubelet minikubevm}    spec.containers{articles}       Normal          Pulling         pulling image "pacuna/articles:v_0"
-      3m            3m              1       {kubelet minikubevm}    spec.containers{articles}       Normal          Pulled          Successfully pulled image "pacuna/articles:v_0"
-      3m            3m              1       {kubelet minikubevm}    spec.containers{articles}       Normal          Created         Created container with docker id aaef08a467bf
-      3m            3m              1       {kubelet minikubevm}    spec.containers{articles}       Normal          Started         Started container with docker id aaef08a467bf
-      3m            3m              1       {kubelet minikubevm}    spec.containers{articles}       Normal          Killing         Killing container with docker id aaef08a467bf: Need to kill pod.
-
-This time we found more events. The container was killed. Let's see if we can find something
-in the logs:
-
-    $ kubectl logs articles-setup articles
+    $ kubectl logs $pods
 
 Output:
 
@@ -1005,15 +992,15 @@ Output:
     PostgreSQL started
     == 20160723153218 CreateArticles: migrating ===================================
     -- create_table(:articles)
-       -> 0.0085s
-    == 20160723153218 CreateArticles: migrated (0.0087s) ==========================
+       -> 0.0062s
+    == 20160723153218 CreateArticles: migrated (0.0065s) ==========================
+
+    == 20160725010251 AddSlugToArticles: migrating ================================
+    -- add_column(:articles, :slug, :string)
+       -> 0.0009s
+    == 20160725010251 AddSlugToArticles: migrated (0.0013s) =======================
 
 Cool! So the container ran the migrations and then died. Just what we wanted.
-
-In case you wonder, that `log` command receives a Pod name and then a container name.
-That's why we use `articles-setup articles`. If you see the Pod specification from that template,
-you'll see that the container name we assigned is `articles` and the Pod's name
-is `articles-setup`.
 
 Now, let's run the last piece, the web application:
 
@@ -1289,7 +1276,7 @@ Output:
 
 We are going to update the web application image so it can pick up our latests
 changes. After that, we have to push it to DockerHub and update our articles-deployment file
-and setup-pod file.
+and `setup-job` file.
 
 First, let's build our new version and push it DockerHub:
 
@@ -1307,27 +1294,27 @@ to the production folder:
 
     $ cp kube/development/* kube/production
 
-Now open the setup-pod.yaml and replace the container version and also the
+Now open the setup-job.yaml and replace the container version and also the
 passenger environmental variable that defines the Rails environment (replace the
 username with yours):
 
-    apiVersion: v1
-    kind: Pod
+    apiVersion: batch/v1
+    kind: Job
     metadata:
-      name: articles-setup
+      name: setup
     spec:
-      restartPolicy: Never
-      containers:
-      - image: username/articles:v_1
-        name: articles
-        env:
-        - name: PASSENGER_APP_ENV
-          value: production
-        ports:
-        - containerPort: 80
-          name: articles
-        imagePullPolicy: Always
-        command: ["/bin/bash", "./setup.sh"]
+      template:
+        metadata:
+          name: setup
+        spec:
+          containers:
+          - name: setup
+            image: pacuna/articles:v_1
+            command: ["/bin/bash", "./setup.sh"]
+            env:
+            - name: PASSENGER_APP_ENV
+              value: development
+          restartPolicy: Never
 
 Now, let's do the same thing with the articles-deployment.yaml file (replace the username
 with yours):
@@ -1375,11 +1362,11 @@ with yours):
 There you can see that the only thing we changed was the `PASSENGER_APP_ENV` variable
 and the image version.
 
-Let's remove the current deployments and container setup:
+Let's remove the current deployments and setup job:
 
     $ kubectl delete -f kube/development/articles-deployment.yaml
     $ kubectl delete -f kube/development/postgres-deployment.yaml
-    $ kubectl delete -f kube/development/setup-pod.yaml
+    $ kubectl delete -f kube/development/setup-job.yaml
 
 Just a quick check to see if there are still pods running on the cluster:
 
@@ -1392,12 +1379,13 @@ production templates:
 
 For the database,
 
-    $ kubectl create -f kube/production/setup-pod.yaml
+    $ kubectl create -f kube/production/setup-job.yaml
 
 For the setup. Wait for a little bit so the setup finishes.
 Run the logs command to see if it's ready:
 
-    $ kubectl logs articles-setup articles
+    $ pods=$(kubectl get pods --selector=job-name=setup --output=jsonpath={.items..metadata.name})
+    $ kubectl logs $pods
 
 Output should be:
 
@@ -1475,11 +1463,12 @@ Output:
 
 Now the setup:
 
-    $ kubectl create -f kube/production/setup-pod.yaml
+    $ kubectl create -f kube/production/setup-job.yaml
 
 Check the logs after a few minutes to see if it's finished:
 
-    $ kubectl logs articles-setup articles
+    $ pods=$(kubectl get pods --selector=job-name=setup --output=jsonpath={.items..metadata.name})
+    $ kubectl logs $pods
 
 Output:
 
@@ -1705,16 +1694,17 @@ There you can see that this volume is in fact attached to an instance. That's
 the instance that's holding the PostgreSQL container right now.
 
 If we want to do our smoke test one more time to see if the database is working correctly, we
-first have to rerun our setup container. Remember that this container migrates
+first have to rerun our setup Job. Remember that this container migrates
 the database and right now we are starting with a fresh PostgreSQL container that
 from now on will be able to persist its data.
 
-    $ kubectl delete -f kube/production/setup-pod.yaml
-    $ kubectl create -f kube/production/setup-pod.yaml
+    $ kubectl delete -f kube/production/setup-job.yaml
+    $ kubectl create -f kube/production/setup-job.yaml
 
 As always let's check out the logs:
 
-    $ kubectl logs articles-setup articles
+    $ pods=$(kubectl get pods --selector=job-name=setup --output=jsonpath={.items..metadata.name})
+    $ kubectl logs $pods
 
 Output:
 
@@ -1806,19 +1796,20 @@ to DockerHub.
     $ docker build -t username/articles:v_2 .
     $ docker push username/articles:v_2
 
-Update the image version in both the setup-pod template and the
+Update the image version in both the `setup-job` template and the
 articles-deployment template:
 
     image: username/articles:v_2
 
-Now, let's rerun our setup container so the migrations are applied:
+Now, let's rerun our setup Job so the migrations are applied:
 
-    $ kubectl delete -f kube/production/setup-pod.yaml
-    $ kubectl create -f kube/production/setup-pod.yaml
+    $ kubectl delete -f kube/production/setup-job.yaml
+    $ kubectl create -f kube/production/setup-job.yaml
 
 Check the logs:
 
-    $ kubectl logs articles-setup articles
+    $ pods=$(kubectl get pods --selector=job-name=setup --output=jsonpath={.items..metadata.name})
+    $ echo $pods
 
 Output:
 
@@ -2155,22 +2146,22 @@ Now that we know Jenkins can use our cluster, let's add a build step to our
 Job. Go to your `Articles` project in Jenkins and click on `Configure`.
 
 At the end, add another `build step` but this time choose `Execute shell`.
-The script we're adding here should update and rerun our setup-pod.yaml file
+The script we're adding here should update and rerun our setup-job.yaml file
 and also update our application deployment. The deployment is very easy to update,
 we can just set the latest image we just created by using something like:
 
     kubectl set image deployment/articles articles=pacuna/articles:version_$BUILD_NUMBER
 
-But with the setup container is a little bit more complicated. There's
+But with the setup Job is a little bit more complicated. There's
 not an easy way of updating a pod. We have to modify the template so it takes
 the latest image version, delete it from the cluster and the run it again.
 
 For that we can use `sed` for finding the image by using a Regex pattern and then
 replacing the file with the created image. Something like this should do the trick:
 
-    $ sed -e 's/pacuna\/articles:[a-z0-9_]*/pacuna\/articles:version_$BUILD_NUMBER/g' kube/production/setup-pod.yaml \
-    > kube/production/setup-pod.yaml.tmp && \
-    mv kube/production/setup-pod.yaml.tmp kube/production/setup-pod.yaml
+    $ sed -e 's/pacuna\/articles:[a-z0-9_]*/pacuna\/articles:version_$BUILD_NUMBER/g' kube/production/setup-job.yaml \
+    > kube/production/setup-job.yaml.tmp && \
+    mv kube/production/setup-job.yaml.tmp kube/production/setup-job.yaml
 
 That command will find the string `pacuna/articles:version_SOMENUMBER` and replace
 it with `pacuna/articles:version_$BUILD_NUMBER` which is the recent built version.
@@ -2178,16 +2169,16 @@ Then it'll replace the old file with the result of that replacing.
 
 Now, in the `Execute Shell` add the following:
 
-    # delete old setup pod
-    kubectl delete -f kube/production/setup-pod.yaml
+    # delete old setup Job
+    kubectl delete -f kube/production/setup-job.yaml
 
     # replace old image version in the setup template file
-    sed -e "s/pacuna\/articles:[a-z0-9_]*/pacuna\/articles:version_${BUILD_NUMBER}/g" kube/production/setup-pod.yaml \
-    > kube/production/setup-pod.yaml.tmp && \
-    mv kube/production/setup-pod.yaml.tmp kube/production/setup-pod.yaml
+    sed -e "s/pacuna\/articles:[a-z0-9_]*/pacuna\/articles:version_${BUILD_NUMBER}/g" kube/production/setup-job.yaml \
+    > kube/production/setup-job.yaml.tmp && \
+    mv kube/production/setup-job.yaml.tmp kube/production/setup-job.yaml
 
     # recreate the setup pod with the new articles image
-    kubectl create -f kube/production/setup-pod.yaml
+    kubectl create -f kube/production/setup-job.yaml
 
     # update the deployment with the new articles image
     kubectl set image deployment/articles articles=pacuna/articles:version_$BUILD_NUMBER
