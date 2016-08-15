@@ -2065,6 +2065,9 @@ the Jenkins credentials provider, use the `Username with password` kind, and
 add your Username and Password for GitHub. Make sure to select those
 credentials after, and that Jenkins doesn't throw any field errors. That's all
 for that section.
+If you have problems with Kind of authentication, you can also add your username
+and ssh private key to the Jenkins Credentials Provider and use the SSH URL of your
+repository.
 
 In the `Build Triggers` section, check on `Build when a change is pushed to GitHub`.
 
@@ -2187,3 +2190,276 @@ And click on `Apply` and then `Save`.
 
 Now go and click on `Build Now` and if you click on the Job and see the console
 output, you'll see how the process is now completely automatic.
+
+## Running the test suite
+
+A big part in Continuous Integration is testing.
+With Jenkins we have the possibility to run our test before updating our application.
+
+With Docker is pretty easy to run tests.
+
+We'll use docker-compose to run our test before we push the image to DockerHub.
+It doesn't have much sense to push a broken image. So this workflow will be:
+
+- We push bad code to GitHub and trigger a new deploy
+- Jenkins catch these changes
+- Jenkins runs Docker Compose using this new code and a custom entrypoint
+- Jenkins waits for the status code of the test container
+- If status is different than 0, the deployment stops.
+
+First, let's configure our test database credentials in development.
+
+Add the following configuration to your `config/database.yml` file:
+
+    test:
+      <<: *default
+      host: postgres
+      username: articles
+      password: mysecretpassword
+      database: articles_test
+
+Remember we are running a PostgreSQL container and creating a non-default super use.
+In this case the user is `articles`. Now, let's create the test database
+in our development container:
+
+    $ docker-compose exec webapp /bin/bash -c "RAILS_ENV=test rake db:create"
+
+Output:
+
+    Created database 'articles_test'
+
+And now let's run the tests:
+
+    $ docker-compose exec webapp /bin/bash -c "RAILS_ENV=test rake"
+
+Output:
+
+    Run options: --seed 2060
+
+    # Running:
+
+    .....
+
+    Finished in 1.398970s, 3.5741 runs/s, 5.0037 assertions/s.
+
+    5 runs, 7 assertions, 0 failures, 0 errors, 0 skips
+
+Great, so we have our tests to run locally and they are passing. This was just to
+be sure that we have a test suite ready to be run.
+
+Let's create a test docker-compose file and a script for running a custom entrypoint
+(you can create these files in your root application folder):
+
+    $ touch docker-compose.test.yml
+    $ touch test.sh
+
+First, for the docker-compose.test.yml file add the following:
+
+
+    version: '2'
+    services:
+      webapp_test:
+        build: .
+        depends_on:
+          - postgres
+        environment:
+          - PASSENGER_APP_ENV=test
+        entrypoint: ./test.sh
+      postgres:
+        image: postgres:9.5.3
+        environment:
+          - POSTGRES_PASSWORD=mysecretpassword
+          - POSTGRES_USER=articles
+
+Pretty simple. We are running a container that build our application
+from the latest code and a database. We use the `test.sh` as the new
+entrypoint, and we set the `PASSENGER_APP_ENV` to `test` so the commands
+in the entrypoint run under that environment.
+
+Now, for the `test.sh` file add the following:
+
+    #!/bin/sh
+
+
+    while ! nc -z postgres 5432; do
+      sleep 0.1
+    done
+
+    echo "PostgreSQL started"
+
+    echo "Creating test database"
+    rake db:create
+
+    rake
+
+Same as the setup container, first we wait for the PostgreSQL container to be available.
+Then we create the test database and then we run our tests with the `rake` command.
+
+Now, just for testing purposes, let's broke one of our tests.
+
+Open `test/controllers/articles_controller_test.rb` and modify the status code
+of this test from 201 to 301:
+
+
+    test "should create article" do
+      assert_difference('Article.count') do
+        post articles_url, params: { article: { body: @article.body, title: @article.title } }, as: :json
+      end
+
+      assert_response 301
+    end
+
+We just want to test that Jenkins will actually stop the deployment when see
+that this test fails.
+
+Now push this code to your GitHub repository. There's no need to build a new
+image since Jenkins is now doing that work for us with every build.
+
+    $ git add .
+    $ git commit -m 'Add testing stuff'
+    $ git push origin master
+
+Now let's go to Jenkins and Go to our `Articles` project and its configuration
+section.
+
+Add a new Build step selecting `Execute Shell` and then drag that step
+and put it before the `Docker Build and Publish` step. Remember we don't to
+create and push the new image until we're sure the tests pass.
+
+Add the following to that step:
+
+    #!/bin/sh
+
+    # create test environment
+    docker-compose -f docker-compose.test.yml build
+    docker-compose -f docker-compose.test.yml up -d
+
+
+    # wait for the test container to finish and get its status code
+    EXIT_CODE=$(docker wait articles_webapp_test_1)
+
+    if [ $EXIT_CODE -eq 0 ]
+    then
+      docker logs articles_webapp_test_1
+      echo "All tests passed! :)"
+      docker-compose -f docker-compose.test.yml rm --force
+    else
+      docker logs articles_webapp_test_1
+      echo "Tests failed! :("
+      docker-compose -f docker-compose.test.yml rm --force
+      exit 1
+    fi
+
+This script will run Docker Compose and will use the docker-compose.test.yml
+file we created. It'll build the image using the current workspace, that contains
+the latest code pulled from GitHub.
+Then, with the help of the `docker wait` command, we can get the status code
+of the test container. This container runs the `rake` command, which will return
+0 if all the tests pass, and 1 otherwise.
+After we have that exit code, we print the logs for that container, so we can
+see the tests, print a friendly message and then removing the containers.
+On the contrary, if the tests don't pass, we delete the containers and stop
+the deployment. At this point, the `exit 1` command will stop the deploy and Jenkins
+will mark this release as failed. The image will not be pushed to DockerHub, which
+is exactly what we wanted.
+
+Click on Apply and then save.
+
+Now let's test this pipeline by running `Build Now` on the sidebar.
+
+If you go to the console output of this release, at the end you should see:
+
+    PostgreSQL started
+    Creating test database
+    Database 'articles' already exists
+    Database 'articles_test' already exists
+    Run options: --seed 21780
+
+    # Running:
+
+    ...F
+
+    Failure:
+    ArticlesControllerTest#test_should_create_article [/home/app/webapp/test/controllers/articles_controller_test.rb:18]:
+    Expected response to be a <301: Moved Permanently>, but was a <201: Created>.
+    Expected: 301
+      Actual: 201
+
+    bin/rails test test/controllers/articles_controller_test.rb:13
+
+    .
+
+    Finished in 0.495264s, 10.0956 runs/s, 14.1339 assertions/s.
+
+    5 runs, 7 assertions, 1 failures, 0 errors, 0 skips
+    Tests failed! :(
+    Removing articles_webapp_test_1 ...
+    Removing articles_webapp_test_1 ... done
+    Going to remove articles_webapp_test_1
+    Build step 'Execute shell' marked build as failure
+    Finished: FAILURE
+
+That's excellent! Remember we pushed a broken test to GitHub and that's
+why this deploy is failing.
+
+Let's now fix the test, push to GitHub and build the project once again.
+First fix the articles controller test so it checks for a 201 status code:
+
+
+    test "should create article" do
+      assert_difference('Article.count') do
+        post articles_url, params: { article: { body: @article.body, title: @article.title } }, as: :json
+      end
+
+      assert_response 201
+    end
+
+Now push those changes to the repository:
+
+    $ git add .
+    $ git commit -f 'Fix broken test'
+    $ git push origin master
+
+Now, go to your Jenkins projects and hit 'Build Now' one more time.
+
+Now if you follow the console output you can see the tests passing:
+
+    Database 'articles' already exists
+    Database 'articles_test' already exists
+    Run options: --seed 54264
+
+    # Running:
+
+    .....
+
+    Finished in 0.454971s, 10.9897 runs/s, 15.3856 assertions/s.
+
+    5 runs, 7 assertions, 0 failures, 0 errors, 0 skips
+    All tests passed! :)
+
+Then the image is built and pushed to DockeHub:
+
+    ...
+    version_24: digest: sha256:a495edcdff27fb3234c6a27e2077ee3103e49c927f51e020cf814997c7906b2d size: 5116
+    [articles] $ docker push pacuna/articles:latest
+    The push refers to a repository [docker.io/pacuna/articles]
+    d42093693d3e: Preparing
+    4e7715ba227e: Preparing
+    4fff77f116fb: Preparing
+    bc3a60fe1ebb: Preparing
+    ...
+
+And finally the Kubernetes templates are updated:
+
+    job "setup" deleted
+    job "setup" created
+    deployment "articles" image updated
+    Finished: SUCCESS
+
+Awesome! Now you know how to add a build step that run your test suite
+for avoiding deploys that may break your application.
+
+You may want to version all of the scripts that you use in your Jenkins steps.
+A better practice is to keep those scripts in your applications and only call the
+file instead of writing the bash code in Jenkins. But that's up to you. I'm only showing
+you some good alternatives and ideas that can help you to write your customized scripts.
