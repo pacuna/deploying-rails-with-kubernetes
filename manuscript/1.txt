@@ -2204,13 +2204,11 @@ output, you'll see how the process is now completely automatic.
 A big part in Continuous Integration is testing.
 With Jenkins we have the possibility to run our test before updating our application.
 
-With Docker is pretty easy to run tests.
-
 We'll use docker-compose to run our test before we push the image to DockerHub.
 It doesn't have much sense to push a broken image. So this workflow will be:
 
 - We push bad code to GitHub and trigger a new deploy
-- Jenkins catch these changes
+- Jenkins pulls these changes
 - Jenkins runs Docker Compose using this new code and a custom entrypoint
 - Jenkins waits for the status code of the test container
 - If status is different than 0, the deployment stops.
@@ -2226,9 +2224,9 @@ Add the following configuration to your `config/database.yml` file:
       password: mysecretpassword
       database: articles_test
 
-Remember we are running a PostgreSQL container and creating a non-default super use.
-In this case the user is `articles`. Now, let's create the test database
-in our development container:
+Remember we are running a PostgreSQL container and creating a non-default super user.
+In this case the user is `articles`.
+Now, let's create the test database in our development container:
 
     $ docker-compose exec webapp /bin/bash -c "RAILS_ENV=test rake db:create"
 
@@ -2252,10 +2250,9 @@ Output:
 
     5 runs, 7 assertions, 0 failures, 0 errors, 0 skips
 
-Great, so we have our tests to run locally and they are passing. This was just to
-be sure that we have a test suite ready to be run.
+Great! We have our tests passing locally. This was just to be sure that we have a test suite ready.
 
-Let's create a test docker-compose file and a script for running a custom entrypoint
+Let's create a docker-compose file for the testing environment and a script for running a custom entrypoint
 (you can create these files in your root application folder):
 
     $ touch docker-compose.test.yml
@@ -2279,10 +2276,10 @@ First, for the docker-compose.test.yml file add the following:
           - POSTGRES_PASSWORD=mysecretpassword
           - POSTGRES_USER=articles
 
-Pretty simple. We are running a container that build our application
-from the latest code and a database. We use the `test.sh` as the new
+Pretty simple. We are running a container that builds our application
+from the latest code and a is connected to a database container. We use the `test.sh` as the new
 entrypoint, and we set the `PASSENGER_APP_ENV` to `test` so the commands
-in the entrypoint run under that environment.
+in the entrypoint run on that environment.
 
 Now, for the `test.sh` file add the following:
 
@@ -2300,12 +2297,12 @@ Now, for the `test.sh` file add the following:
 
     rake
 
-Same as the setup container, first we wait for the PostgreSQL container to be available.
-Then we create the test database and then we run our tests with the `rake` command.
+Same as the setup container, we wait for the PostgreSQL container to be available.
+Then we create the test database and finally we run our tests with the `rake` command.
 
-Now, just for testing purposes, let's broke one of our tests.
+Now, just for testing purposes, let's break one of our tests.
 
-Open `test/controllers/articles_controller_test.rb` and modify the status code
+Open the `test/controllers/articles_controller_test.rb` file and modify the status code
 of this test from 201 to 301:
 
 
@@ -2327,11 +2324,10 @@ image since Jenkins is now doing that work for us with every build.
     $ git commit -m 'Add testing stuff'
     $ git push origin master
 
-Now let's go to Jenkins and Go to our `Articles` project and its configuration
-section.
+Now let's go to our `Articles` project's configuration in Jenkins.
 
 Add a new Build step selecting `Execute Shell` and then drag that step
-and put it before the `Docker Build and Publish` step. Remember we don't to
+and put it before the `Docker Build and Publish` step. Remember we don't want to
 create and push the new image until we're sure the tests pass.
 
 Add the following to that step:
@@ -2358,24 +2354,22 @@ Add the following to that step:
       exit 1
     fi
 
-This script will run Docker Compose and will use the docker-compose.test.yml
+This script will run Docker Compose and will use the `docker-compose.test.yml`
 file we created. It'll build the image using the current workspace, that contains
 the latest code pulled from GitHub.
 Then, with the help of the `docker wait` command, we can get the status code
 of the test container. This container runs the `rake` command, which will return
 0 if all the tests pass, and 1 otherwise.
 After we have that exit code, we print the logs for that container, so we can
-see the tests, print a friendly message and then removing the containers.
+see the tests, print a friendly message and then remove the containers.
 On the contrary, if the tests don't pass, we delete the containers and stop
 the deployment. At this point, the `exit 1` command will stop the deploy and Jenkins
 will mark this release as failed. The image will not be pushed to DockerHub, which
-is exactly what we wanted.
+is what we want.
 
 Click on Apply and then save.
-
 Now let's test this pipeline by running `Build Now` on the sidebar.
-
-If you go to the console output of this release, at the end you should see:
+If you go to the console output after build the project, at the end you should see:
 
     PostgreSQL started
     Creating test database
@@ -2410,7 +2404,8 @@ If you go to the console output of this release, at the end you should see:
 That's excellent! Remember we pushed a broken test to GitHub and that's
 why this deploy is failing.
 
-Let's now fix the test, push to GitHub and build the project once again.
+Now let's fix the test, push the code to GitHub and build the project once again.
+
 First fix the articles controller test so it checks for a 201 status code:
 
 
@@ -2428,9 +2423,8 @@ Now push those changes to the repository:
     $ git commit -f 'Fix broken test'
     $ git push origin master
 
-Now, go to your Jenkins projects and hit 'Build Now' one more time.
-
-Now if you follow the console output you can see the tests passing:
+Now, go to your Jenkins projects and hit `Build Now` one more time.
+If you follow the console output you can see the tests passing:
 
     Database 'articles' already exists
     Database 'articles_test' already exists
@@ -2464,10 +2458,10 @@ And finally the Kubernetes templates are updated:
     deployment "articles" image updated
     Finished: SUCCESS
 
-Awesome! Now you know how to add a build step that run your test suite
+Awesome! Now you know how to add a build step that runs your test suite
 for avoiding deploys that may break your application.
 
 You may want to version all of the scripts that you use in your Jenkins steps.
-A better practice is to keep those scripts in your applications and only call the
+It's better to keep those scripts in your applications and only call the
 file instead of writing the bash code in Jenkins. But that's up to you. I'm only showing
-you some good alternatives and ideas that can help you to write your customized scripts.
+you some ideas that can help you to write your customized scripts.
