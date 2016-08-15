@@ -2465,3 +2465,18 @@ You may want to version all of the scripts that you use in your Jenkins steps.
 It's better to keep those scripts in your applications and only call the
 file instead of writing the bash code in Jenkins. But that's up to you. I'm only showing
 you some ideas that can help you to write your customized scripts.
+
+## Push to deploy
+
+Now that we have our deploy pipeline ready, it's very easy to add service hook
+so deploys are triggered via GitHub pushes.
+
+First, go to your Articles GitHub repository and navigate to `Settings` -> `Webhooks & services`.
+Click on `Add service` a search for the `Jenkins (GitHub Plugin)`
+After filling out your password add the URL for the Jenkins Hook:
+
+    http://your-jenkins-address:8080/github-webhook/
+
+And then click on `Add service`.
+That's it! Now every time you push a change to your GitHub repository, a new
+deploy will be triggered in the Jenkins Server.
